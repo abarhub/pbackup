@@ -73,8 +73,8 @@ async fn main() -> Result<(), Error> {
     println!("debut : {}", start.format("%Y-%m-%d %H:%M:S"));
 
 
-    nb_appel_max = 10;
-    //nb_appel_max = 0;
+    //nb_appel_max = 10;
+    nb_appel_max = 0;
 
     let config_or_err = get_config();
 
@@ -254,6 +254,7 @@ async fn main() -> Result<(), Error> {
 
         if count % 10 == 0 {
             save_as_json_list(&data, &fichier);
+            println!("Fichier sauve: {}", fichier);
         }
 
         if config.temporisation > 0 {
