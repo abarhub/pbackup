@@ -9,8 +9,8 @@ use serde_json::Value;
 
 use std::fs::File;
 use std::io::Write;
-use std::{env, fs};
 use std::path::Path;
+use std::{env, fs};
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -58,6 +58,11 @@ async fn main() -> Result<(), Error> {
     // // Afficher la config chargée
     // println!("Configuration chargée : {:?}", config);
 
+    let nb_appel_max: u64;
+
+    // nb_appel_max = 10;
+    nb_appel_max = 0;
+
     let config_or_err = get_config();
 
     let config: Config;
@@ -83,25 +88,23 @@ async fn main() -> Result<(), Error> {
     println!("{}", request_url2);
 
     let fichier = config.repertoire + "/data.json";
-    
+
     let mut count = 0u64;
     let mut offset = 0u64;
 
-    let mut data:Value;
+    let mut data: Value;
 
     let is_present = Path::new(&fichier.clone()).exists();
     if is_present {
-        let file = fs::File::open(fichier.clone())
-            .expect("file should open read only");
-        let json: serde_json::Value = serde_json::from_reader(file)
-            .expect("file should be proper JSON");
+        let file = fs::File::open(fichier.clone()).expect("file should open read only");
+        let json: serde_json::Value =
+            serde_json::from_reader(file).expect("file should be proper JSON");
 
         //data= serde_json::json!({});
-        data=json;
+        data = json;
     } else {
-        data= serde_json::json!({});
+        data = serde_json::json!({});
     }
-    
 
     loop {
         let client = reqwest::Client::new();
@@ -141,33 +144,36 @@ async fn main() -> Result<(), Error> {
             .body(json_output.to_owned())
             .send()
             .await;
-        
-        let bodyOk:String;
-        
+
+        let bodyOk: String;
+
         match response {
             Ok(resp) => match resp.status() {
                 StatusCode::OK => {
                     match resp.text().await {
                         Ok(body) => {
                             // println!("Réponse reçue : {}", body)
-                            bodyOk=body;
-                        },
+                            bodyOk = body;
+                        }
                         Err(err) => {
                             eprintln!("Erreur en lisant la réponse : {}", err);
                             break;
-                        },
+                        }
                     }
                 }
                 StatusCode::NOT_FOUND => {
                     eprintln!("Erreur 404 : Ressource non trouvée.");
+                    eprintln!("headers: {:?}", resp.headers());
                     break;
                 }
                 StatusCode::BAD_REQUEST => {
                     eprintln!("Erreur 400 : Bad request.");
+                    eprintln!("headers: {:?}", resp.headers());
                     break;
                 }
                 other => {
                     eprintln!("Réponse inattendue : {:?}", other);
+                    eprintln!("headers: {:?}", resp.headers());
                     break;
                 }
             },
@@ -176,19 +182,19 @@ async fn main() -> Result<(), Error> {
                 break;
             }
         }
-        
+
         // let status = response.status();
         // println!("{:?}", status);
-        // 
+        //
         // match (status) {
         //     StatusCode(StatusCode.Ok) => {}
         //     StatusCode(_) => {}
         // }
-        
+
         // let users: Vec<User> = response.json().await?;
         //let users = response.text().await?;
-        let users=bodyOk;
-        println!("{:?}", users);
+        let users = bodyOk;
+        //println!("{:?}", users);
 
         let json_value: Value = serde_json::from_str(&*users).expect("Erreur de parsing");
 
@@ -223,7 +229,7 @@ async fn main() -> Result<(), Error> {
 
         println!("count : {}", count);
 
-        if count > 3 {
+        if nb_appel_max > 0 && count > nb_appel_max  {
             println!("fin de boucle : {}", count);
             break;
         }
@@ -232,8 +238,6 @@ async fn main() -> Result<(), Error> {
     println!("nb total: {}", data.as_object().unwrap().len());
 
     println!("termine : {}", count);
-
-    
 
     save_as_json_list(&data, &fichier);
 
