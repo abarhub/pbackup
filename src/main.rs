@@ -10,7 +10,10 @@ use serde_json::Value;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use std::{env, fs};
+use std::{env, fs, thread};
+use std::time::Duration;
+
+use chrono::{Local};
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -21,6 +24,7 @@ struct Config {
     consumer_key: String,
     access_token: String,
     repertoire: String,
+    temporisation: u64
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -59,6 +63,9 @@ async fn main() -> Result<(), Error> {
     // println!("Configuration chargée : {:?}", config);
 
     let nb_appel_max: u64;
+
+    let start = Local::now();
+    println!("debut : {}", start.format("%Y-%m-%d %H:%M:S"));
 
     // nb_appel_max = 10;
     nb_appel_max = 0;
@@ -164,16 +171,19 @@ async fn main() -> Result<(), Error> {
                 StatusCode::NOT_FOUND => {
                     eprintln!("Erreur 404 : Ressource non trouvée.");
                     eprintln!("headers: {:?}", resp.headers());
+                    eprintln!("body: {:?}", resp.text().await);
                     break;
                 }
                 StatusCode::BAD_REQUEST => {
                     eprintln!("Erreur 400 : Bad request.");
                     eprintln!("headers: {:?}", resp.headers());
+                    eprintln!("body: {:?}", resp.text().await);
                     break;
                 }
                 other => {
-                    eprintln!("Réponse inattendue : {:?}", other);
+                    eprintln!("Réponse inattendue : {:?}", other);;
                     eprintln!("headers: {:?}", resp.headers());
+                    eprintln!("body: {:?}", resp.text().await);
                     break;
                 }
             },
@@ -233,15 +243,32 @@ async fn main() -> Result<(), Error> {
             println!("fin de boucle : {}", count);
             break;
         }
+
+        if count %10==0 {
+            save_as_json_list(&data, &fichier);
+        }
+        
+        if config.temporisation>0 {
+            thread::sleep(Duration::from_millis(config.temporisation));
+        }
     }
 
     println!("nb total: {}", data.as_object().unwrap().len());
 
     println!("termine : {}", count);
-
+   
+    
     save_as_json_list(&data, &fichier);
 
     println!("Fichier sauve: {}", fichier);
+
+    let end = Local::now();
+
+    let diff = end - start;
+
+    println!("fin : {}", end.format("%Y-%m-%d %H:%M:S"));
+
+    println!("duree totale : {}", diff);
     // let vect = json_value.as_array().unwrap();
     // println!("{}", vect.len());
     //
