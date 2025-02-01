@@ -1,4 +1,4 @@
 /target
 config/application.toml
 data/
-
+.idea/
