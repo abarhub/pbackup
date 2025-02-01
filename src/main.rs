@@ -1,5 +1,5 @@
 use reqwest;
-use reqwest::Client;
+use reqwest::{Client, Response, StatusCode};
 
 use reqwest::header::USER_AGENT;
 use reqwest::Error;
@@ -10,6 +10,7 @@ use serde_json::Value;
 use std::fs::File;
 use std::io::Write;
 use std::{env, fs};
+use std::path::Path;
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -81,10 +82,26 @@ async fn main() -> Result<(), Error> {
     let request_url2 = config.url.clone();
     println!("{}", request_url2);
 
+    let fichier = config.repertoire + "/data.json";
+    
     let mut count = 0u64;
     let mut offset = 0u64;
 
-    let mut data = serde_json::json!({});
+    let mut data:Value;
+
+    let is_present = Path::new(&fichier.clone()).exists();
+    if is_present {
+        let file = fs::File::open(fichier.clone())
+            .expect("file should open read only");
+        let json: serde_json::Value = serde_json::from_reader(file)
+            .expect("file should be proper JSON");
+
+        //data= serde_json::json!({});
+        data=json;
+    } else {
+        data= serde_json::json!({});
+    }
+    
 
     loop {
         let client = reqwest::Client::new();
@@ -123,12 +140,54 @@ async fn main() -> Result<(), Error> {
             .header("X-Accept", "application/json")
             .body(json_output.to_owned())
             .send()
-            .await?;
-
-        let status = response.status();
-        println!("{:?}", status);
+            .await;
+        
+        let bodyOk:String;
+        
+        match response {
+            Ok(resp) => match resp.status() {
+                StatusCode::OK => {
+                    match resp.text().await {
+                        Ok(body) => {
+                            // println!("Réponse reçue : {}", body)
+                            bodyOk=body;
+                        },
+                        Err(err) => {
+                            eprintln!("Erreur en lisant la réponse : {}", err);
+                            break;
+                        },
+                    }
+                }
+                StatusCode::NOT_FOUND => {
+                    eprintln!("Erreur 404 : Ressource non trouvée.");
+                    break;
+                }
+                StatusCode::BAD_REQUEST => {
+                    eprintln!("Erreur 400 : Bad request.");
+                    break;
+                }
+                other => {
+                    eprintln!("Réponse inattendue : {:?}", other);
+                    break;
+                }
+            },
+            Err(err) => {
+                eprintln!("Erreur lors de la requête : {}", err);
+                break;
+            }
+        }
+        
+        // let status = response.status();
+        // println!("{:?}", status);
+        // 
+        // match (status) {
+        //     StatusCode(StatusCode.Ok) => {}
+        //     StatusCode(_) => {}
+        // }
+        
         // let users: Vec<User> = response.json().await?;
-        let users = response.text().await?;
+        //let users = response.text().await?;
+        let users=bodyOk;
         println!("{:?}", users);
 
         let json_value: Value = serde_json::from_str(&*users).expect("Erreur de parsing");
@@ -174,7 +233,7 @@ async fn main() -> Result<(), Error> {
 
     println!("termine : {}", count);
 
-    let fichier = config.repertoire + "/data.json";
+    
 
     save_as_json_list(&data, &fichier);
 
