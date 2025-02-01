@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use serde_json::Value;
 
+use std::fs::File;
+use std::io::Write;
 use std::{env, fs};
 
 #[derive(Debug, Deserialize)]
@@ -20,7 +22,7 @@ struct Config {
     repertoire: String,
 }
 
-#[derive(Serialize,Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct Parameters {
     consumer_key: String,
     access_token: String,
@@ -28,6 +30,7 @@ struct Parameters {
     count: u64,
     offset: u64,
     total: u8,
+    sort: String,
 }
 
 #[derive(Deserialize, Debug)]
@@ -69,62 +72,118 @@ async fn main() -> Result<(), Error> {
     }
     println!("Configuration chargée : {:?}", config);
 
-    let mut request_url = format!(
-        "https://api.github.com/repos/{owner}/{repo}/stargazers",
-        //config.url,
-        owner = "rust-lang-nursery",
-        repo = "rust-cookbook"
-    );
-    request_url = config.url;
-    println!("{}", request_url);
+    // let mut request_url = format!(
+    //     "https://api.github.com/repos/{owner}/{repo}/stargazers",
+    //     //config.url,
+    //     owner = "rust-lang-nursery",
+    //     repo = "rust-cookbook"
+    // );
+    let request_url2 = config.url.clone();
+    println!("{}", request_url2);
 
-    let client = reqwest::Client::new();
-    // let response = client
-    //     .get(request_url)
-    //     .header(USER_AGENT, "rust-web-api-client") // gh api requires a user-agent header
-    //     .send()
-    //     .await?;
+    let mut count = 0u64;
+    let mut offset = 0u64;
 
-    //let json_data = r#"{"title":"Problems during installation","status":"todo","priority":"medium","label":"bug"}"#;
-    //let json_data = "{\"title":"Problems during installation","status":"todo","priority":"medium","label":"bug"}"#;
+    let mut data = serde_json::json!({});
 
-    let param=Parameters {
-        consumer_key: config.consumer_key,
-        access_token: config.access_token,
-        detailType: "complete".parse().unwrap(),
-        count: 30,
-        offset: 0,
-        total:1
-    };
+    loop {
+        let client = reqwest::Client::new();
+        // let response = client
+        //     .get(request_url)
+        //     .header(USER_AGENT, "rust-web-api-client") // gh api requires a user-agent header
+        //     .send()
+        //     .await?;
 
-    let json_output = serde_json::to_string(&param).expect("Erreur de sérialisation");
+        //let json_data = r#"{"title":"Problems during installation","status":"todo","priority":"medium","label":"bug"}"#;
+        //let json_data = "{\"title":"Problems during installation","status":"todo","priority":"medium","label":"bug"}"#;
 
-    let response = client
-        .post(request_url)
-        .header("Content-Type", "application/json")
-        .header("X-Accept", "application/json")
-        .body(json_output.to_owned())
-        .send()
-        .await?;
+        let consumer_key = config.consumer_key.clone();
+        let access_token = config.access_token.clone();
 
-    let status = response.status();
-    println!("{:?}", status);
-    // let users: Vec<User> = response.json().await?;
-    let users = response.text().await?;
-    println!("{:?}", users);
+        let param = Parameters {
+            consumer_key: consumer_key,
+            access_token: access_token,
+            //detailType: "complete".parse().unwrap(),
+            detailType: "simple".parse().unwrap(),
+            count: 30,
+            offset: offset,
+            total: 1,
+            sort: "oldest".parse().unwrap(),
+        };
 
-    let json_value: Value = serde_json::from_str(&*users).expect("Erreur de parsing");
+        let json_output = serde_json::to_string(&param).expect("Erreur de sérialisation");
 
-    let obj = json_value.as_object().unwrap();
+        let request_url = config.url.clone();
 
-    println!("maxActions: {}", obj["maxActions"].as_i64().unwrap_or(-1));
-    println!("cachetype: {}", obj["cachetype"].as_str().unwrap_or("Inconnu"));
-    
+        println!("appel serveur offset : {}", offset);
+
+        let response = client
+            .post(request_url)
+            .header("Content-Type", "application/json")
+            .header("X-Accept", "application/json")
+            .body(json_output.to_owned())
+            .send()
+            .await?;
+
+        let status = response.status();
+        println!("{:?}", status);
+        // let users: Vec<User> = response.json().await?;
+        let users = response.text().await?;
+        println!("{:?}", users);
+
+        let json_value: Value = serde_json::from_str(&*users).expect("Erreur de parsing");
+
+        let obj = json_value.as_object().unwrap();
+
+        println!("maxActions: {}", obj["maxActions"].as_i64().unwrap_or(-1));
+        println!(
+            "cachetype: {}",
+            obj["cachetype"].as_str().unwrap_or("Inconnu")
+        );
+        println!("since: {}", obj["since"].as_i64().unwrap_or(-1));
+        //println!("total: {}", obj["total"].as_i64().unwrap_or(-1));
+
+        // let vec = obj["list"].as_array().unwrap();
+        // println!("vect nb: {}", vec.len());
+
+        if obj["list"].is_object() {
+            let obj2 = obj["list"].as_object().unwrap();
+
+            println!("nb: {}", obj2.len());
+            offset = offset + obj2.len() as u64;
+
+            for tmp in obj2.iter() {
+                data[tmp.0] = tmp.1.clone();
+            }
+        } else {
+            println!("Pas de liste");
+            break;
+        }
+
+        count += 1;
+
+        println!("count : {}", count);
+
+        if count > 3 {
+            println!("fin de boucle : {}", count);
+            break;
+        }
+    }
+
+    println!("nb total: {}", data.as_object().unwrap().len());
+
+    println!("termine : {}", count);
+
+    let fichier = config.repertoire + "/data.json";
+
+    save_as_json_list(&data, &fichier);
+
+    println!("Fichier sauve: {}", fichier);
     // let vect = json_value.as_array().unwrap();
     // println!("{}", vect.len());
-    // 
+    //
     // //println!("{}", vect.get(0)..len());
-    // 
+    //
     // // Vérification et parcours du tableau JSON
     // if let Some(array) = json_value.as_array() {
     //     for utilisateur in array {
@@ -155,6 +214,15 @@ fn get_config() -> Result<Config, Box<dyn std::error::Error>> {
     println!("Configuration chargée : {:?}", config);
 
     Ok(config)
+}
+
+fn save_as_json_list(list: &Value, fname: &str) {
+    let list_as_json = serde_json::to_string(list).unwrap();
+
+    let mut file = File::create(fname).expect("Could not create file!");
+
+    file.write_all(list_as_json.as_bytes())
+        .expect("Cannot write to the file!");
 }
 
 // fn main() -> Result<(), Box<dyn std::error::Error>> {
