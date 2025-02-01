@@ -5,15 +5,15 @@ use reqwest::header::USER_AGENT;
 use reqwest::Error;
 use serde::{Deserialize, Serialize};
 
-use serde_json::Value;
+use serde_json::{Number, Value};
 
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use std::{env, fs, thread};
 use std::time::Duration;
+use std::{env, fs, thread};
 
-use chrono::{Local};
+use chrono::Local;
 
 #[derive(Debug, Deserialize)]
 struct Config {
@@ -24,7 +24,7 @@ struct Config {
     consumer_key: String,
     access_token: String,
     repertoire: String,
-    temporisation: u64
+    temporisation: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -43,6 +43,11 @@ struct User {
     login: String,
     id: u32,
 }
+
+const DATA_ETAT:&str = "etat";
+const DATA_OFFSET:&str = "offset";
+const DATA_DATE:&str = "date";
+const DATA_LISTE:&str = "liste";
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -67,8 +72,9 @@ async fn main() -> Result<(), Error> {
     let start = Local::now();
     println!("debut : {}", start.format("%Y-%m-%d %H:%M:S"));
 
-    // nb_appel_max = 10;
-    nb_appel_max = 0;
+
+    nb_appel_max = 10;
+    //nb_appel_max = 0;
 
     let config_or_err = get_config();
 
@@ -85,12 +91,6 @@ async fn main() -> Result<(), Error> {
     }
     println!("Configuration chargée : {:?}", config);
 
-    // let mut request_url = format!(
-    //     "https://api.github.com/repos/{owner}/{repo}/stargazers",
-    //     //config.url,
-    //     owner = "rust-lang-nursery",
-    //     repo = "rust-cookbook"
-    // );
     let request_url2 = config.url.clone();
     println!("{}", request_url2);
 
@@ -109,8 +109,14 @@ async fn main() -> Result<(), Error> {
 
         //data= serde_json::json!({});
         data = json;
+        offset = data[DATA_OFFSET].as_u64().unwrap_or(0)
     } else {
-        data = serde_json::json!({});
+        data = serde_json::json!({
+            DATA_ETAT:"initialisation",
+            DATA_OFFSET: 0,
+            DATA_DATE:0,
+            DATA_LISTE: {}
+        });
     }
 
     loop {
@@ -181,7 +187,7 @@ async fn main() -> Result<(), Error> {
                     break;
                 }
                 other => {
-                    eprintln!("Réponse inattendue : {:?}", other);;
+                    eprintln!("Réponse inattendue : {:?}", other);
                     eprintln!("headers: {:?}", resp.headers());
                     eprintln!("body: {:?}", resp.text().await);
                     break;
@@ -227,9 +233,11 @@ async fn main() -> Result<(), Error> {
             println!("nb: {}", obj2.len());
             offset = offset + obj2.len() as u64;
 
+            let liste = &mut data[DATA_LISTE];
             for tmp in obj2.iter() {
-                data[tmp.0] = tmp.1.clone();
+                liste[tmp.0] = tmp.1.clone();
             }
+            data[DATA_OFFSET] = Value::Number(Number::from(offset));
         } else {
             println!("Pas de liste");
             break;
@@ -239,16 +247,16 @@ async fn main() -> Result<(), Error> {
 
         println!("count : {}", count);
 
-        if nb_appel_max > 0 && count > nb_appel_max  {
+        if nb_appel_max > 0 && count >= nb_appel_max {
             println!("fin de boucle : {}", count);
             break;
         }
 
-        if count %10==0 {
+        if count % 10 == 0 {
             save_as_json_list(&data, &fichier);
         }
-        
-        if config.temporisation>0 {
+
+        if config.temporisation > 0 {
             thread::sleep(Duration::from_millis(config.temporisation));
         }
     }
@@ -256,8 +264,7 @@ async fn main() -> Result<(), Error> {
     println!("nb total: {}", data.as_object().unwrap().len());
 
     println!("termine : {}", count);
-   
-    
+
     save_as_json_list(&data, &fichier);
 
     println!("Fichier sauve: {}", fichier);
@@ -269,20 +276,6 @@ async fn main() -> Result<(), Error> {
     println!("fin : {}", end.format("%Y-%m-%d %H:%M:S"));
 
     println!("duree totale : {}", diff);
-    // let vect = json_value.as_array().unwrap();
-    // println!("{}", vect.len());
-    //
-    // //println!("{}", vect.get(0)..len());
-    //
-    // // Vérification et parcours du tableau JSON
-    // if let Some(array) = json_value.as_array() {
-    //     for utilisateur in array {
-    //         let nom = utilisateur["login"].as_str().unwrap_or("Inconnu");
-    //         let prenom = utilisateur["id"].as_i64().unwrap_or(-1);
-    //         println!("Login: {}, Id: {}", nom, prenom);
-    //     }
-    // }
-
     Ok(())
 }
 
@@ -315,32 +308,3 @@ fn save_as_json_list(list: &Value, fname: &str) {
         .expect("Cannot write to the file!");
 }
 
-// fn main() -> Result<(), Box<dyn std::error::Error>> {
-//     println!("Hello, world!");
-//
-//     // unwrapped result from get_text() with ?
-//     let text = get_text()?;
-//
-//     // changed formatting
-//     println!("Got text {}", text);
-//
-//     // as main method response type is changes return unit type in case of success
-//     Ok(())
-// }
-//
-// fn get_text() -> Result<String, Box<dyn std::error::Error>> {
-//     let http_client = reqwest::blocking::Client::new();
-//     // let http_client = Client::new();
-//     let url = "https://google.com";
-//
-//     let response = http_client
-//         // form a get request with get(url)
-//         .get(url)
-//         // send the request and get Response or else return the error
-//         .send()?
-//         // get text from response or else return the error
-//         .text().unwrap();
-//
-//     // wrapped response in Result
-//     Ok(response)
-// }
