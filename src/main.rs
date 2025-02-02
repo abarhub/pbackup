@@ -80,8 +80,8 @@ async fn main() -> Result<(), Error> {
     let handle = log4rs::init_config(config).unwrap();
     
     //nb_appel_max = 3;
-    nb_appel_max = 10;
-    //nb_appel_max = 0;
+    //nb_appel_max = 10;
+    nb_appel_max = 0;
 
     let config_or_err = get_config(handle);
 
