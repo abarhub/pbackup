@@ -1,0 +1,9 @@
+url = 'https://getpocket.com/v3/get'
+consumer_key = ''
+access_token = ''
+repertoire = 'data'
+temporisation = 15000
+config_log = 'config/log4rs.yml'
+
+
+
