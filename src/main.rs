@@ -1,3 +1,4 @@
+//use log4rs::config::load_config_file;
 use reqwest;
 use reqwest::{Client, Response, StatusCode};
 
@@ -15,6 +16,13 @@ use std::{env, fs, thread};
 
 use chrono::Local;
 
+use log::LevelFilter;
+use log4rs::append::console::ConsoleAppender;
+use log4rs::append::file::FileAppender;
+use log4rs::encode::pattern::PatternEncoder;
+use log4rs::config::{Appender, Logger, Root};
+use log4rs::Handle;
+
 #[derive(Debug, Deserialize, Clone)]
 struct Config {
     url: String,
@@ -22,6 +30,7 @@ struct Config {
     access_token: String,
     repertoire: String,
     temporisation: u64,
+    config_log: String
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -53,12 +62,28 @@ async fn main() -> Result<(), Error> {
     let start = Local::now();
     println!("debut : {}", start.format("%Y-%m-%d %H:%M:%S"));
 
+    let stdout = ConsoleAppender::builder().build();
+    
+    let config = log4rs::config::Config::builder()
+        .appender(Appender::builder().build("stdout", Box::new(stdout)))
+        //.appender(Appender::builder().build("requests", Box::new(requests)))
+        //.logger(Logger::builder().build("app::backend::db", LevelFilter::Info))
+        // .logger(Logger::builder()
+        //     .appender("requests")
+        //     .additive(false)
+        //     .build("app::requests", LevelFilter::Info))
+        .build(Root::builder().appender("stdout").build(LevelFilter::Info))
+        .unwrap();
+    
+    
 
-    nb_appel_max = 3;
-    // nb_appel_max = 10;
+    let handle = log4rs::init_config(config).unwrap();
+    
+    //nb_appel_max = 3;
+    nb_appel_max = 10;
     //nb_appel_max = 0;
 
-    let config_or_err = get_config();
+    let config_or_err = get_config(handle);
 
     let config: Config;
     match (config_or_err) {
@@ -71,10 +96,13 @@ async fn main() -> Result<(), Error> {
             std::process::exit(1);
         }
     }
-    println!("Configuration chargée : {:?}", config);
+    //println!("Configuration chargée : {:?}", config);
+    log::info!("Configuration chargée : {:?}", config);
+
+    log::info!("logging configure");
 
     let request_url2 = config.url.clone();
-    println!("{}", request_url2);
+    log::info!("{}", request_url2);
 
     let fichier = config.repertoire.clone() + "/data.json";
 
@@ -150,7 +178,7 @@ async fn main() -> Result<(), Error> {
 
         let request_url = config.url.clone();
 
-        println!("appel serveur offset : {}", offset);
+        log::info!("appel serveur offset : {}", offset);
 
         let response = client
             .post(request_url)
@@ -171,32 +199,32 @@ async fn main() -> Result<(), Error> {
                             body_ok = body;
                         }
                         Err(err) => {
-                            eprintln!("Erreur en lisant la réponse : {}", err);
+                            log::error!("Erreur en lisant la réponse : {}", err);
                             break;
                         }
                     }
                 }
                 StatusCode::NOT_FOUND => {
-                    eprintln!("Erreur 404 : Ressource non trouvée.");
-                    eprintln!("headers: {:?}", resp.headers());
-                    eprintln!("body: {:?}", resp.text().await);
+                    log::error!("Erreur 404 : Ressource non trouvée.");
+                    log::error!("headers: {:?}", resp.headers());
+                    log::error!("body: {:?}", resp.text().await);
                     break;
                 }
                 StatusCode::BAD_REQUEST => {
-                    eprintln!("Erreur 400 : Bad request.");
-                    eprintln!("headers: {:?}", resp.headers());
-                    eprintln!("body: {:?}", resp.text().await);
+                    log::error!("Erreur 400 : Bad request.");
+                    log::error!("headers: {:?}", resp.headers());
+                    log::error!("body: {:?}", resp.text().await);
                     break;
                 }
                 other => {
-                    eprintln!("Réponse inattendue : {:?}", other);
-                    eprintln!("headers: {:?}", resp.headers());
-                    eprintln!("body: {:?}", resp.text().await);
+                    log::error!("Réponse inattendue : {:?}", other);
+                    log::error!("headers: {:?}", resp.headers());
+                    log::error!("body: {:?}", resp.text().await);
                     break;
                 }
             },
             Err(err) => {
-                eprintln!("Erreur lors de la requête : {}", err);
+                log::error!("Erreur lors de la requête : {}", err);
                 break;
             }
         }
@@ -214,12 +242,12 @@ async fn main() -> Result<(), Error> {
 
         let obj = json_value.as_object().unwrap();
 
-        println!("maxActions: {}", obj["maxActions"].as_i64().unwrap_or(-1));
-        println!(
+        log::info!("maxActions: {}", obj["maxActions"].as_i64().unwrap_or(-1));
+        log::info!(
             "cachetype: {}",
             obj["cachetype"].as_str().unwrap_or("Inconnu")
         );
-        println!("since: {}", obj["since"].as_i64().unwrap_or(-1));
+        log::info!("since: {}", obj["since"].as_i64().unwrap_or(-1));
         //println!("total: {}", obj["total"].as_i64().unwrap_or(-1));
 
         // let vec = obj["list"].as_array().unwrap();
@@ -228,7 +256,7 @@ async fn main() -> Result<(), Error> {
         if obj["list"].is_object() {
             let obj2 = obj["list"].as_object().unwrap();
 
-            println!("nb: {}", obj2.len());
+            log::info!("nb: {}", obj2.len());
             offset = offset + obj2.len() as u64;
 
             let liste = &mut data[DATA_LISTE];
@@ -239,16 +267,16 @@ async fn main() -> Result<(), Error> {
             let date=obj["since"].as_i64().unwrap_or(-1);
             if date>0 {
                 dernier_since= date as u64;
-                println!("dernier: {}", dernier_since);
+                log::info!("dernier: {}", dernier_since);
             }
         } else {
-            println!("Pas de liste");            
+            log::info!("Pas de liste");
             if dernier_since>0{
                 data[DATA_DATE] = Value::Number(Number::from(dernier_since));
-                println!("mise à jour du since: {}", dernier_since);
-            }     
+                log::info!("mise à jour du since: {}", dernier_since);
+            }
             if initialisation{
-                println!("fin d'initialisation");
+                log::info!("fin d'initialisation");
                 data[DATA_ETAT] = Value::String(DATA_ETAT_MISE_A_JOUR.to_string());
             }
             break;
@@ -256,10 +284,10 @@ async fn main() -> Result<(), Error> {
 
         count += 1;
 
-        println!("count : {}", count);
+        log::info!("count : {}", count);
 
         if nb_appel_max > 0 && count >= nb_appel_max {
-            println!("fin de boucle : {}", count);
+            log::info!("fin de boucle : {}", count);
             break;
         }
 
@@ -272,9 +300,9 @@ async fn main() -> Result<(), Error> {
         }
     }
 
-    println!("nb total: {}", data.as_object().unwrap().len());
+    log::info!("nb total: {}", data.as_object().unwrap().len());
 
-    println!("termine : {}", count);
+    log::info!("termine : {}", count);
 
     save_as_json_list(&data, &fichier);
 
@@ -282,9 +310,9 @@ async fn main() -> Result<(), Error> {
 
     let diff = end - start;
 
-    println!("fin : {}", end.format("%Y-%m-%d %H:%M:%S"));
+    log::info!("fin : {}", end.format("%Y-%m-%d %H:%M:%S"));
 
-    println!("duree totale : {}", diff);
+    log::info!("duree totale : {}", diff);
     Ok(())
 }
 
@@ -303,12 +331,12 @@ fn backup_data(config: Config, fichier: &String)-> std::io::Result<()> {
         s2.push_str(".json");
         let file_resultat=format!("{rep}/backup/data_{s}.json");
         fs::copy(fichier, &file_resultat)?;
-        println!("copie vers : {}", file_resultat);
+        log::info!("copie vers : {}", file_resultat);
     }
     Ok(())
 }
 
-fn get_config() -> Result<Config, Box<dyn std::error::Error>> {
+fn get_config(handle: Handle) -> Result<Config, Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 2 {
         eprintln!("Usage: {} <config_file>", args[0]);
@@ -324,18 +352,25 @@ fn get_config() -> Result<Config, Box<dyn std::error::Error>> {
 
     // Afficher la config chargée
     println!("Configuration chargée : {:?}", config);
+    log::info!("Configuration chargée : {:?}", config);
 
+    log::info!("Reconfiguration des logs ...");
+    let chemin_config_log=config.config_log.as_str();
+    let configuration_log=log4rs::config::load_config_file(chemin_config_log, Default::default())?;
+    handle.set_config(configuration_log);
+    log::info!("Reconfiguration des logs ok");
+    
     Ok(config)
 }
 
 fn save_as_json_list(list: &Value, fname: &str) {
-    println!("Sauvegarde de {} ...", fname);
+    log::info!("Sauvegarde de {} ...", fname);
     let list_as_json = serde_json::to_string(list).unwrap();
 
     let mut file = File::create(fname).expect("Could not create file!");
 
     file.write_all(list_as_json.as_bytes())
         .expect("Cannot write to the file!");
-    println!("Fichier {} sauve", fname);
+    log::info!("Fichier {} sauve", fname);
 }
 

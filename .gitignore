@@ -2,3 +2,5 @@
 config/application.toml
 data/
 .idea/
+config/log4rs.yml
+log/
