@@ -15,7 +15,7 @@ use std::{env, fs, thread};
 
 use chrono::Local;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 struct Config {
     url: String,
     consumer_key: String,
@@ -81,7 +81,10 @@ async fn main() -> Result<(), Error> {
     let request_url2 = config.url.clone();
     println!("{}", request_url2);
 
-    let fichier = config.repertoire + "/data.json";
+    let fichier = config.repertoire.clone() + "/data.json";
+
+    let config2=config.clone();
+    backup_data(config2, &fichier.clone());
 
     let mut count = 0u64;
     let mut offset = 0u64;
@@ -291,6 +294,26 @@ async fn main() -> Result<(), Error> {
     println!("fin : {}", end.format("%Y-%m-%d %H:%M:%S"));
 
     println!("duree totale : {}", diff);
+    Ok(())
+}
+
+fn backup_data(config: Config, fichier: &String)-> std::io::Result<()> {
+    let date = Local::now();
+
+    // let is_present = Path::new(&fichier.clone()).exists();
+    let is_present = Path::new(fichier).exists();
+    if(is_present){
+        let mut s2: String = "".to_owned();
+        let s=date.timestamp().to_string();
+        let rep=config.repertoire.as_str();
+        // s2.push_str(&config.repertoire.as_str());
+        s2.push_str("/backup/data_");
+        s2.push_str(&s);
+        s2.push_str(".json");
+        let file_resultat=format!("{rep}/backup/data_{s}.json");
+        fs::copy(fichier, &file_resultat)?;
+        println!("copie vers : {}", file_resultat);
+    }
     Ok(())
 }
 
