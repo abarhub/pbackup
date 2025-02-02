@@ -37,11 +37,6 @@ struct Parameters {
     since: Option<u64>
 }
 
-// #[derive(Deserialize, Debug)]
-// struct User {
-//     login: String,
-//     id: u32,
-// }
 
 const DATA_ETAT: &str = "etat";
 const DATA_OFFSET: &str = "offset";
@@ -214,10 +209,6 @@ async fn main() -> Result<(), Error> {
         //     StatusCode(_) => {}
         // }
 
-        // let users: Vec<User> = response.json().await?;
-        //let users = response.text().await?;
-        //let users = body_ok;
-        //println!("{:?}", users);
 
         let json_value: Value = serde_json::from_str(&*body_ok).expect("Erreur de parsing");
 
