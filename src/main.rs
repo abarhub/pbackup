@@ -1,26 +1,18 @@
+use chrono::Local;
+use log::LevelFilter;
+use log4rs::append::console::ConsoleAppender;
+use log4rs::config::{Appender, Root};
+use log4rs::Handle;
 use reqwest;
-use reqwest::{Client, Response, StatusCode};
-
-use reqwest::header::USER_AGENT;
 use reqwest::Error;
+use reqwest::{StatusCode};
 use serde::{Deserialize, Serialize};
-
 use serde_json::{Number, Value};
-
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 use std::{env, fs, thread};
-
-use chrono::Local;
-
-use log::LevelFilter;
-use log4rs::append::console::ConsoleAppender;
-use log4rs::append::file::FileAppender;
-use log4rs::config::{Appender, Logger, Root};
-use log4rs::encode::pattern::PatternEncoder;
-use log4rs::Handle;
 
 #[derive(Debug, Deserialize, Clone)]
 struct Config {
@@ -36,7 +28,8 @@ struct Config {
 struct Parameters {
     consumer_key: String,
     access_token: String,
-    detailType: String,
+    #[serde(rename = "detail_type")]
+    detail_type: String,
     count: u64,
     offset: u64,
     total: u8,
@@ -70,7 +63,7 @@ async fn main() -> Result<(), Error> {
     let handle = log4rs::init_config(config).unwrap();
 
     log::info!("debut : {}", start.format("%Y-%m-%d %H:%M:%S"));
-    
+
     //nb_appel_max = 3;
     //nb_appel_max = 10;
     nb_appel_max = 0;
@@ -78,7 +71,7 @@ async fn main() -> Result<(), Error> {
     let config_or_err = get_config(handle);
 
     let config: Config;
-    match (config_or_err) {
+    match config_or_err {
         Ok(valeur) => {
             log::info!("Résultat : {:?}", valeur);
             config = valeur
@@ -98,7 +91,7 @@ async fn main() -> Result<(), Error> {
     let fichier = config.repertoire.clone() + "/data.json";
 
     let config2 = config.clone();
-    backup_data(config2, &fichier.clone());
+    backup_data(config2, &fichier.clone()).unwrap();
 
     let mut count = 0u64;
     let mut offset = 0u64;
@@ -112,8 +105,7 @@ async fn main() -> Result<(), Error> {
     let is_present = Path::new(&fichier.clone()).exists();
     if is_present {
         let file = File::open(fichier.clone()).expect("file should open read only");
-        let json: Value =
-            serde_json::from_reader(file).expect("file should be proper JSON");
+        let json: Value = serde_json::from_reader(file).expect("file should be proper JSON");
 
         data = json;
         offset = data[DATA_OFFSET].as_u64().unwrap_or(0);
@@ -142,8 +134,8 @@ async fn main() -> Result<(), Error> {
             param = Parameters {
                 consumer_key: consumer_key,
                 access_token: access_token,
-                //detailType: "complete".parse().unwrap(),
-                detailType: "simple".parse().unwrap(),
+                //detail_type: "complete".parse().unwrap(),
+                detail_type: "simple".parse().unwrap(),
                 count: 30,
                 offset: offset,
                 total: 1,
@@ -154,8 +146,8 @@ async fn main() -> Result<(), Error> {
             param = Parameters {
                 consumer_key: consumer_key,
                 access_token: access_token,
-                //detailType: "complete".parse().unwrap(),
-                detailType: "simple".parse().unwrap(),
+                //detail_type: "complete".parse().unwrap(),
+                detail_type: "simple".parse().unwrap(),
                 count: 30,
                 offset: offset,
                 total: 1,
@@ -303,13 +295,11 @@ async fn main() -> Result<(), Error> {
 fn backup_data(config: Config, fichier: &String) -> std::io::Result<()> {
     let date = Local::now();
 
-    // let is_present = Path::new(&fichier.clone()).exists();
     let is_present = Path::new(fichier).exists();
-    if (is_present) {
+    if is_present {
         let mut s2: String = "".to_owned();
         let s = date.timestamp().to_string();
         let rep = config.repertoire.as_str();
-        // s2.push_str(&config.repertoire.as_str());
         s2.push_str("/backup/data_");
         s2.push_str(&s);
         s2.push_str(".json");
