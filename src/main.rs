@@ -175,9 +175,12 @@ async fn main() -> Result<(), Error> {
         match response {
             Ok(resp) => match resp.status() {
                 StatusCode::OK => {
+                    log::info!("OK");
+                    log::info!("headers: {:?}", resp.headers());
                     match resp.text().await {
                         Ok(body) => {
                             // println!("Réponse reçue : {}", body)
+                            
                             body_ok = body;
                         }
                         Err(err) => {
@@ -228,29 +231,38 @@ async fn main() -> Result<(), Error> {
             log::info!("since: {}", obj["since"].as_i64().unwrap_or(-1));
         }
 
+        let mut fin=false;
         if obj.contains_key("list") && obj["list"].is_object() {
             let obj2 = obj["list"].as_object().unwrap();
 
             log::info!("nb: {}", obj2.len());
-            offset = offset + obj2.len() as u64;
+            
+            if obj2.len()==0 {
+                fin = true;
+            } else {
+                offset = offset + obj2.len() as u64;
 
-            let liste = &mut data[DATA_LISTE];
-            for tmp in obj2.iter() {
-                liste[tmp.0] = tmp.1.clone();
-            }
-            data[DATA_OFFSET] = Value::Number(Number::from(offset));
-            let date = obj["since"].as_i64().unwrap_or(-1);
-            if date > 0 {
-                dernier_since = date as u64;
-                log::info!("dernier: {}", dernier_since);
+                let liste = &mut data[DATA_LISTE];
+                for tmp in obj2.iter() {
+                    liste[tmp.0] = tmp.1.clone();
+                }
+                data[DATA_OFFSET] = Value::Number(Number::from(offset));
+                let date = obj["since"].as_i64().unwrap_or(-1);
+                if date > 0 {
+                    dernier_since = date as u64;
+                    log::info!("dernier: {}", dernier_since);
+                }
             }
         } else {
+            fin = true;
+        }
+        if fin {
             log::info!("Pas de liste");
             if dernier_since > 0 {
                 data[DATA_DATE] = Value::Number(Number::from(dernier_since));
                 log::info!("mise à jour du since: {}", dernier_since);
             }
-            if initialisation {
+            if initialisation && false {
                 log::info!("fin d'initialisation");
                 data[DATA_ETAT] = Value::String(DATA_ETAT_MISE_A_JOUR.to_string());
                 log::info!("mise à jour de l'etat: {}", data[DATA_ETAT]);
