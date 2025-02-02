@@ -17,9 +17,6 @@ use chrono::Local;
 
 #[derive(Debug, Deserialize)]
 struct Config {
-    //app_name: String,
-    //debug: bool,
-    //port: u16,
     url: String,
     consumer_key: String,
     access_token: String,
@@ -36,45 +33,35 @@ struct Parameters {
     offset: u64,
     total: u8,
     sort: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    since: Option<u64>
 }
 
-#[derive(Deserialize, Debug)]
-struct User {
-    login: String,
-    id: u32,
-}
+// #[derive(Deserialize, Debug)]
+// struct User {
+//     login: String,
+//     id: u32,
+// }
 
-const DATA_ETAT:&str = "etat";
-const DATA_OFFSET:&str = "offset";
-const DATA_DATE:&str = "date";
-const DATA_LISTE:&str = "liste";
+const DATA_ETAT: &str = "etat";
+const DATA_OFFSET: &str = "offset";
+const DATA_DATE: &str = "date";
+const DATA_LISTE: &str = "liste";
+
+const DATA_ETAT_INITIALISATION: &str = "initialisation";
+const DATA_ETAT_MISE_A_JOUR: &str = "miseAJour";
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    // let args: Vec<String> = env::args().collect();
-    // if args.len() < 2 {
-    //     eprintln!("Usage: {} <config_file>", args[0]);
-    //     std::process::exit(1);
-    // }
-    // let config_path = &args[1];
-    //
-    // // Lire le contenu du fichier
-    // let config_content = fs::read_to_string(config_path)?;
-    //
-    // // Parser le fichier TOML
-    // let config: Config = toml::from_str(&config_content)?;
-    //
-    // // Afficher la config chargée
-    // println!("Configuration chargée : {:?}", config);
-
     let nb_appel_max: u64;
 
     let start = Local::now();
-    println!("debut : {}", start.format("%Y-%m-%d %H:%M:S"));
+    println!("debut : {}", start.format("%Y-%m-%d %H:%M:%S"));
 
 
-    //nb_appel_max = 10;
-    nb_appel_max = 0;
+    nb_appel_max = 3;
+    // nb_appel_max = 10;
+    //nb_appel_max = 0;
 
     let config_or_err = get_config();
 
@@ -98,8 +85,12 @@ async fn main() -> Result<(), Error> {
 
     let mut count = 0u64;
     let mut offset = 0u64;
+    let mut since =0u64;
+    let mut dernier_since =0u64;
 
     let mut data: Value;
+
+    let initialisation: bool;
 
     let is_present = Path::new(&fichier.clone()).exists();
     if is_present {
@@ -109,40 +100,53 @@ async fn main() -> Result<(), Error> {
 
         //data= serde_json::json!({});
         data = json;
-        offset = data[DATA_OFFSET].as_u64().unwrap_or(0)
+        offset = data[DATA_OFFSET].as_u64().unwrap_or(0);
+        initialisation = data[DATA_ETAT].as_str().unwrap_or("") == DATA_ETAT_INITIALISATION;
+        if !initialisation {
+            since=data[DATA_DATE].as_u64().unwrap();
+        }
     } else {
         data = serde_json::json!({
-            DATA_ETAT:"initialisation",
+            DATA_ETAT:DATA_ETAT_INITIALISATION,
             DATA_OFFSET: 0,
             DATA_DATE:0,
             DATA_LISTE: {}
         });
+        initialisation = true;
     }
 
     loop {
         let client = reqwest::Client::new();
-        // let response = client
-        //     .get(request_url)
-        //     .header(USER_AGENT, "rust-web-api-client") // gh api requires a user-agent header
-        //     .send()
-        //     .await?;
-
-        //let json_data = r#"{"title":"Problems during installation","status":"todo","priority":"medium","label":"bug"}"#;
-        //let json_data = "{\"title":"Problems during installation","status":"todo","priority":"medium","label":"bug"}"#;
 
         let consumer_key = config.consumer_key.clone();
         let access_token = config.access_token.clone();
 
-        let param = Parameters {
-            consumer_key: consumer_key,
-            access_token: access_token,
-            //detailType: "complete".parse().unwrap(),
-            detailType: "simple".parse().unwrap(),
-            count: 30,
-            offset: offset,
-            total: 1,
-            sort: "oldest".parse().unwrap(),
-        };
+        let param: Parameters;
+        if initialisation {
+            param = Parameters {
+                consumer_key: consumer_key,
+                access_token: access_token,
+                //detailType: "complete".parse().unwrap(),
+                detailType: "simple".parse().unwrap(),
+                count: 30,
+                offset: offset,
+                total: 1,
+                sort: "oldest".parse().unwrap(),
+                since: Option::None,
+            };
+        } else {
+            param = Parameters {
+                consumer_key: consumer_key,
+                access_token: access_token,
+                //detailType: "complete".parse().unwrap(),
+                detailType: "simple".parse().unwrap(),
+                count: 30,
+                offset: offset,
+                total: 1,
+                sort: "oldest".parse().unwrap(),
+                since: Option::Some(since),
+            };
+        }
 
         let json_output = serde_json::to_string(&param).expect("Erreur de sérialisation");
 
@@ -158,7 +162,7 @@ async fn main() -> Result<(), Error> {
             .send()
             .await;
 
-        let bodyOk: String;
+        let body_ok: String;
 
         match response {
             Ok(resp) => match resp.status() {
@@ -166,7 +170,7 @@ async fn main() -> Result<(), Error> {
                     match resp.text().await {
                         Ok(body) => {
                             // println!("Réponse reçue : {}", body)
-                            bodyOk = body;
+                            body_ok = body;
                         }
                         Err(err) => {
                             eprintln!("Erreur en lisant la réponse : {}", err);
@@ -209,10 +213,10 @@ async fn main() -> Result<(), Error> {
 
         // let users: Vec<User> = response.json().await?;
         //let users = response.text().await?;
-        let users = bodyOk;
+        //let users = body_ok;
         //println!("{:?}", users);
 
-        let json_value: Value = serde_json::from_str(&*users).expect("Erreur de parsing");
+        let json_value: Value = serde_json::from_str(&*body_ok).expect("Erreur de parsing");
 
         let obj = json_value.as_object().unwrap();
 
@@ -238,8 +242,21 @@ async fn main() -> Result<(), Error> {
                 liste[tmp.0] = tmp.1.clone();
             }
             data[DATA_OFFSET] = Value::Number(Number::from(offset));
+            let date=obj["since"].as_i64().unwrap_or(-1);
+            if date>0 {
+                dernier_since= date as u64;
+                println!("dernier: {}", dernier_since);
+            }
         } else {
-            println!("Pas de liste");
+            println!("Pas de liste");            
+            if dernier_since>0{
+                data[DATA_DATE] = Value::Number(Number::from(dernier_since));
+                println!("mise à jour du since: {}", dernier_since);
+            }     
+            if initialisation{
+                println!("fin d'initialisation");
+                data[DATA_ETAT] = Value::String(DATA_ETAT_MISE_A_JOUR.to_string());
+            }
             break;
         }
 
@@ -254,7 +271,6 @@ async fn main() -> Result<(), Error> {
 
         if count % 10 == 0 {
             save_as_json_list(&data, &fichier);
-            println!("Fichier sauve: {}", fichier);
         }
 
         if config.temporisation > 0 {
@@ -268,13 +284,11 @@ async fn main() -> Result<(), Error> {
 
     save_as_json_list(&data, &fichier);
 
-    println!("Fichier sauve: {}", fichier);
-
     let end = Local::now();
 
     let diff = end - start;
 
-    println!("fin : {}", end.format("%Y-%m-%d %H:%M:S"));
+    println!("fin : {}", end.format("%Y-%m-%d %H:%M:%S"));
 
     println!("duree totale : {}", diff);
     Ok(())
@@ -301,11 +315,13 @@ fn get_config() -> Result<Config, Box<dyn std::error::Error>> {
 }
 
 fn save_as_json_list(list: &Value, fname: &str) {
+    println!("Sauvegarde de {} ...", fname);
     let list_as_json = serde_json::to_string(list).unwrap();
 
     let mut file = File::create(fname).expect("Could not create file!");
 
     file.write_all(list_as_json.as_bytes())
         .expect("Cannot write to the file!");
+    println!("Fichier {} sauve", fname);
 }
 
