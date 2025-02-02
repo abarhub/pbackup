@@ -1,4 +1,3 @@
-//use log4rs::config::load_config_file;
 use reqwest;
 use reqwest::{Client, Response, StatusCode};
 
@@ -19,8 +18,8 @@ use chrono::Local;
 use log::LevelFilter;
 use log4rs::append::console::ConsoleAppender;
 use log4rs::append::file::FileAppender;
-use log4rs::encode::pattern::PatternEncoder;
 use log4rs::config::{Appender, Logger, Root};
+use log4rs::encode::pattern::PatternEncoder;
 use log4rs::Handle;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -30,7 +29,7 @@ struct Config {
     access_token: String,
     repertoire: String,
     temporisation: u64,
-    config_log: String
+    config_log: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -43,9 +42,8 @@ struct Parameters {
     total: u8,
     sort: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    since: Option<u64>
+    since: Option<u64>,
 }
-
 
 const DATA_ETAT: &str = "etat";
 const DATA_OFFSET: &str = "offset";
@@ -63,21 +61,15 @@ async fn main() -> Result<(), Error> {
     println!("debut : {}", start.format("%Y-%m-%d %H:%M:%S"));
 
     let stdout = ConsoleAppender::builder().build();
-    
+
     let config = log4rs::config::Config::builder()
         .appender(Appender::builder().build("stdout", Box::new(stdout)))
-        //.appender(Appender::builder().build("requests", Box::new(requests)))
-        //.logger(Logger::builder().build("app::backend::db", LevelFilter::Info))
-        // .logger(Logger::builder()
-        //     .appender("requests")
-        //     .additive(false)
-        //     .build("app::requests", LevelFilter::Info))
         .build(Root::builder().appender("stdout").build(LevelFilter::Info))
         .unwrap();
-    
-    
 
     let handle = log4rs::init_config(config).unwrap();
+
+    log::info!("debut : {}", start.format("%Y-%m-%d %H:%M:%S"));
     
     //nb_appel_max = 3;
     //nb_appel_max = 10;
@@ -88,15 +80,14 @@ async fn main() -> Result<(), Error> {
     let config: Config;
     match (config_or_err) {
         Ok(valeur) => {
-            println!("Résultat : {:?}", valeur);
+            log::info!("Résultat : {:?}", valeur);
             config = valeur
         }
         Err(erreur) => {
-            println!("Erreur : {}", erreur);
+            log::error!("Erreur : {}", erreur);
             std::process::exit(1);
         }
     }
-    //println!("Configuration chargée : {:?}", config);
     log::info!("Configuration chargée : {:?}", config);
 
     log::info!("logging configure");
@@ -106,13 +97,13 @@ async fn main() -> Result<(), Error> {
 
     let fichier = config.repertoire.clone() + "/data.json";
 
-    let config2=config.clone();
+    let config2 = config.clone();
     backup_data(config2, &fichier.clone());
 
     let mut count = 0u64;
     let mut offset = 0u64;
-    let mut since =0u64;
-    let mut dernier_since =0u64;
+    let mut since = 0u64;
+    let mut dernier_since = 0u64;
 
     let mut data: Value;
 
@@ -120,16 +111,15 @@ async fn main() -> Result<(), Error> {
 
     let is_present = Path::new(&fichier.clone()).exists();
     if is_present {
-        let file = fs::File::open(fichier.clone()).expect("file should open read only");
-        let json: serde_json::Value =
+        let file = File::open(fichier.clone()).expect("file should open read only");
+        let json: Value =
             serde_json::from_reader(file).expect("file should be proper JSON");
 
-        //data= serde_json::json!({});
         data = json;
         offset = data[DATA_OFFSET].as_u64().unwrap_or(0);
         initialisation = data[DATA_ETAT].as_str().unwrap_or("") == DATA_ETAT_INITIALISATION;
         if !initialisation {
-            since=data[DATA_DATE].as_u64().unwrap();
+            since = data[DATA_DATE].as_u64().unwrap();
         }
     } else {
         data = serde_json::json!({
@@ -229,31 +219,24 @@ async fn main() -> Result<(), Error> {
             }
         }
 
-        // let status = response.status();
-        // println!("{:?}", status);
-        //
-        // match (status) {
-        //     StatusCode(StatusCode.Ok) => {}
-        //     StatusCode(_) => {}
-        // }
-
-
         let json_value: Value = serde_json::from_str(&*body_ok).expect("Erreur de parsing");
 
         let obj = json_value.as_object().unwrap();
 
-        log::info!("maxActions: {}", obj["maxActions"].as_i64().unwrap_or(-1));
-        log::info!(
-            "cachetype: {}",
-            obj["cachetype"].as_str().unwrap_or("Inconnu")
-        );
-        log::info!("since: {}", obj["since"].as_i64().unwrap_or(-1));
-        //println!("total: {}", obj["total"].as_i64().unwrap_or(-1));
+        if obj.contains_key("maxActions") {
+            log::info!("maxActions: {}", obj["maxActions"].as_i64().unwrap_or(-1));
+        }
+        if obj.contains_key("cachetype") {
+            log::info!(
+                "cachetype: {}",
+                obj["cachetype"].as_str().unwrap_or("Inconnu")
+            );
+        }
+        if obj.contains_key("since") {
+            log::info!("since: {}", obj["since"].as_i64().unwrap_or(-1));
+        }
 
-        // let vec = obj["list"].as_array().unwrap();
-        // println!("vect nb: {}", vec.len());
-
-        if obj["list"].is_object() {
+        if obj.contains_key("list") && obj["list"].is_object() {
             let obj2 = obj["list"].as_object().unwrap();
 
             log::info!("nb: {}", obj2.len());
@@ -264,20 +247,21 @@ async fn main() -> Result<(), Error> {
                 liste[tmp.0] = tmp.1.clone();
             }
             data[DATA_OFFSET] = Value::Number(Number::from(offset));
-            let date=obj["since"].as_i64().unwrap_or(-1);
-            if date>0 {
-                dernier_since= date as u64;
+            let date = obj["since"].as_i64().unwrap_or(-1);
+            if date > 0 {
+                dernier_since = date as u64;
                 log::info!("dernier: {}", dernier_since);
             }
         } else {
             log::info!("Pas de liste");
-            if dernier_since>0{
+            if dernier_since > 0 {
                 data[DATA_DATE] = Value::Number(Number::from(dernier_since));
                 log::info!("mise à jour du since: {}", dernier_since);
             }
-            if initialisation{
+            if initialisation {
                 log::info!("fin d'initialisation");
                 data[DATA_ETAT] = Value::String(DATA_ETAT_MISE_A_JOUR.to_string());
+                log::info!("mise à jour de l'etat: {}", data[DATA_ETAT]);
             }
             break;
         }
@@ -316,20 +300,20 @@ async fn main() -> Result<(), Error> {
     Ok(())
 }
 
-fn backup_data(config: Config, fichier: &String)-> std::io::Result<()> {
+fn backup_data(config: Config, fichier: &String) -> std::io::Result<()> {
     let date = Local::now();
 
     // let is_present = Path::new(&fichier.clone()).exists();
     let is_present = Path::new(fichier).exists();
-    if(is_present){
+    if (is_present) {
         let mut s2: String = "".to_owned();
-        let s=date.timestamp().to_string();
-        let rep=config.repertoire.as_str();
+        let s = date.timestamp().to_string();
+        let rep = config.repertoire.as_str();
         // s2.push_str(&config.repertoire.as_str());
         s2.push_str("/backup/data_");
         s2.push_str(&s);
         s2.push_str(".json");
-        let file_resultat=format!("{rep}/backup/data_{s}.json");
+        let file_resultat = format!("{rep}/backup/data_{s}.json");
         fs::copy(fichier, &file_resultat)?;
         log::info!("copie vers : {}", file_resultat);
     }
@@ -355,11 +339,12 @@ fn get_config(handle: Handle) -> Result<Config, Box<dyn std::error::Error>> {
     log::info!("Configuration chargée : {:?}", config);
 
     log::info!("Reconfiguration des logs ...");
-    let chemin_config_log=config.config_log.as_str();
-    let configuration_log=log4rs::config::load_config_file(chemin_config_log, Default::default())?;
+    let chemin_config_log = config.config_log.as_str();
+    let configuration_log =
+        log4rs::config::load_config_file(chemin_config_log, Default::default())?;
     handle.set_config(configuration_log);
     log::info!("Reconfiguration des logs ok");
-    
+
     Ok(config)
 }
 
@@ -373,4 +358,3 @@ fn save_as_json_list(list: &Value, fname: &str) {
         .expect("Cannot write to the file!");
     log::info!("Fichier {} sauve", fname);
 }
-
