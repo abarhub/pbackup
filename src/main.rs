@@ -5,14 +5,14 @@ use log4rs::config::{Appender, Root};
 use log4rs::Handle;
 use reqwest;
 use reqwest::Error;
-use reqwest::{StatusCode};
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
-use std::{env, fs, thread};
+use std::{env, fmt, fs, thread};
 
 #[derive(Debug, Deserialize, Clone)]
 struct Config {
@@ -45,6 +45,17 @@ const DATA_LISTE: &str = "liste";
 
 const DATA_ETAT_INITIALISATION: &str = "initialisation";
 const DATA_ETAT_MISE_A_JOUR: &str = "miseAJour";
+
+impl fmt::Display for Parameters {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // Customize so only `x` and `y` are denoted.
+        write!(
+            f,
+            "detail_type: {}, count: {}, offset: {}, total: {}, sort: {}, since: {:?}",
+            self.detail_type, self.count, self.offset, self.total, self.sort, self.since
+        )
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
@@ -123,44 +134,50 @@ async fn main() -> Result<(), Error> {
         initialisation = true;
     }
 
+    let mut total_ajout = 0;
+    let mut total_modifie = 0;
+
+    let consumer_key = config.consumer_key.clone();
+    let access_token = config.access_token.clone();
+
+    let param: Parameters;
+
+    if initialisation {
+        param = Parameters {
+            consumer_key: consumer_key,
+            access_token: access_token,
+            //detail_type: "complete".parse().unwrap(),
+            detail_type: "simple".parse().unwrap(),
+            count: 30,
+            offset: offset,
+            total: 1,
+            sort: "oldest".parse().unwrap(),
+            since: Option::None,
+        };
+    } else {
+        param = Parameters {
+            consumer_key: consumer_key,
+            access_token: access_token,
+            //detail_type: "complete".parse().unwrap(),
+            detail_type: "simple".parse().unwrap(),
+            count: 30,
+            offset: offset,
+            total: 1,
+            sort: "oldest".parse().unwrap(),
+            since: Option::Some(since),
+        };
+    }
+
+    log::info!("parametre de démarrage : {}", param);
+
     loop {
         let client = reqwest::Client::new();
-
-        let consumer_key = config.consumer_key.clone();
-        let access_token = config.access_token.clone();
-
-        let param: Parameters;
-        if initialisation {
-            param = Parameters {
-                consumer_key: consumer_key,
-                access_token: access_token,
-                //detail_type: "complete".parse().unwrap(),
-                detail_type: "simple".parse().unwrap(),
-                count: 30,
-                offset: offset,
-                total: 1,
-                sort: "oldest".parse().unwrap(),
-                since: Option::None,
-            };
-        } else {
-            param = Parameters {
-                consumer_key: consumer_key,
-                access_token: access_token,
-                //detail_type: "complete".parse().unwrap(),
-                detail_type: "simple".parse().unwrap(),
-                count: 30,
-                offset: offset,
-                total: 1,
-                sort: "oldest".parse().unwrap(),
-                since: Option::Some(since),
-            };
-        }
 
         let json_output = serde_json::to_string(&param).expect("Erreur de sérialisation");
 
         let request_url = config.url.clone();
 
-        log::info!("appel serveur offset : {}", offset);
+        log::info!("appel serveur offset: {}, since: {:?}", offset, param.since);
 
         let response = client
             .post(request_url)
@@ -180,7 +197,7 @@ async fn main() -> Result<(), Error> {
                     match resp.text().await {
                         Ok(body) => {
                             // println!("Réponse reçue : {}", body)
-                            
+
                             body_ok = body;
                         }
                         Err(err) => {
@@ -231,21 +248,31 @@ async fn main() -> Result<(), Error> {
             log::info!("since: {}", obj["since"].as_i64().unwrap_or(-1));
         }
 
-        let mut fin=false;
+        let mut fin = false;
         if obj.contains_key("list") && obj["list"].is_object() {
             let obj2 = obj["list"].as_object().unwrap();
 
             log::info!("nb: {}", obj2.len());
-            
-            if obj2.len()==0 {
+
+            if obj2.len() == 0 {
                 fin = true;
             } else {
                 offset = offset + obj2.len() as u64;
 
                 let liste = &mut data[DATA_LISTE];
+                let mut nb_ajout = 0;
+                let mut nb_remplace = 0;
                 for tmp in obj2.iter() {
+                    if liste.as_object().unwrap().contains_key(tmp.0) {
+                        nb_ajout += 1;
+                    } else {
+                        nb_remplace += 1;
+                    }
                     liste[tmp.0] = tmp.1.clone();
                 }
+                log::info!("nb_ajout: {}, nb_remplace: {}", nb_ajout, nb_remplace);
+                total_ajout += nb_ajout;
+                total_modifie += nb_remplace;
                 data[DATA_OFFSET] = Value::Number(Number::from(offset));
                 let date = obj["since"].as_i64().unwrap_or(-1);
                 if date > 0 {
@@ -273,6 +300,20 @@ async fn main() -> Result<(), Error> {
         count += 1;
 
         log::info!("count : {}", count);
+        log::info!(
+            "total_ajout: {}, total_modifie: {}",
+            total_ajout,
+            total_modifie
+        );
+
+        let taille_totale: usize;
+        match data[DATA_LISTE].as_object() {
+            Some(obj) => {
+                taille_totale = obj.len();
+            }
+            _ => taille_totale = 0,
+        };
+        log::info!("taille_totale: {}", taille_totale);
 
         if nb_appel_max > 0 && count >= nb_appel_max {
             log::info!("fin de boucle : {}", count);
