@@ -8,6 +8,7 @@ use reqwest::Error;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
+use std::cmp::{max, min};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -123,6 +124,10 @@ async fn main() -> Result<(), Error> {
         initialisation = data[DATA_ETAT].as_str().unwrap_or("") == DATA_ETAT_INITIALISATION;
         if !initialisation {
             since = data[DATA_DATE].as_u64().unwrap();
+        }
+        if data.is_object() && data.as_object().unwrap().contains_key(DATA_LISTE){
+            let obj= data.as_object().unwrap().get(DATA_LISTE).unwrap().as_object().unwrap();
+            log::info!("taille au debut: {}", obj.len());
         }
     } else {
         data = serde_json::json!({
@@ -262,15 +267,105 @@ async fn main() -> Result<(), Error> {
                 let liste = &mut data[DATA_LISTE];
                 let mut nb_ajout = 0;
                 let mut nb_remplace = 0;
+                let mut s = "".to_string();
+                let mut min_added = 0;
+                let mut max_added = 0;
+                let mut last_added = 0;
+                let mut ordered_added = true;
+                let mut min_updated = 0;
+                let mut max_updated = 0;
+                let mut last_updated = 0;
+                let mut ordered_updated = true;
                 for tmp in obj2.iter() {
-                    if liste.as_object().unwrap().contains_key(tmp.0) {
+                    if !liste.as_object().unwrap().contains_key(tmp.0) {
                         nb_ajout += 1;
                     } else {
                         nb_remplace += 1;
                     }
                     liste[tmp.0] = tmp.1.clone();
+                    let res = tmp.1.clone();
+                    let mut time_added = 0;
+                    let mut time_updated = 0;
+                    if res.is_object() {
+                        let res2 = res.as_object().unwrap();
+                        if res2.contains_key("time_added") {
+                            time_added = res2["time_added"]
+                                .as_str()
+                                .unwrap_or("")
+                                .parse::<i32>()
+                                .unwrap_or(0);                            
+                        }
+                        if res2.contains_key("time_updated") {
+                            time_updated = res2["time_updated"]
+                                .as_str()
+                                .unwrap_or("")
+                                .parse::<i32>()
+                                .unwrap_or(0);
+                        }
+                    }
+                    if time_added > 0 {
+                        if min_added == 0 {
+                            min_added = time_added;
+                        } else {
+                            min_added = min(min_added, time_added);
+                        }
+                        if max_added == 0 {
+                            max_added = time_added;
+                        } else {
+                            max_added = max(max_added, time_added);
+                        }
+                        if last_added>0{
+                            if ordered_added{
+                                if last_added>time_added{
+                                    ordered_added = false;
+                                }
+                            }
+                        }
+                        last_added= time_added;
+                    }
+                    if time_updated > 0 {
+                        if min_updated == 0 {
+                            min_updated = time_updated;
+                        } else {
+                            min_updated = min(min_updated, time_updated);
+                        }
+                        if max_updated == 0 {
+                            max_updated = time_updated;
+                        } else {
+                            max_updated = max(max_updated, time_updated);
+                        }
+                        if last_updated>0{
+                            if ordered_updated{
+                                if last_updated>time_updated{
+                                    ordered_updated = false;
+                                }
+                            }
+                        }
+                        last_updated= time_updated;
+                    }
+                    let s0 = format!(
+                        "({},{},{},{})",
+                        tmp.0,
+                        time_added,
+                        time_updated,
+                        time_added == time_updated
+                    );
+                    if s.len() > 0 {
+                        s.push_str(",")
+                    }
+                    s.push_str(s0.as_str());
                 }
                 log::info!("nb_ajout: {}, nb_remplace: {}", nb_ajout, nb_remplace);
+                log::info!("elements: {}", s);
+                log::info!(
+                    "added: ({},{},{}), updated: ({},{},{})",
+                    min_added,
+                    max_added,
+                    ordered_added,
+                    min_updated,
+                    max_updated,
+                    ordered_updated
+                );
                 total_ajout += nb_ajout;
                 total_modifie += nb_remplace;
                 data[DATA_OFFSET] = Value::Number(Number::from(offset));
@@ -287,6 +382,7 @@ async fn main() -> Result<(), Error> {
             log::info!("Pas de liste");
             if dernier_since > 0 {
                 data[DATA_DATE] = Value::Number(Number::from(dernier_since));
+                //data[DATA_OFFSET] = Value::Number(Number::from(0));
                 log::info!("mise à jour du since: {}", dernier_since);
             }
             if initialisation && false {
