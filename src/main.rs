@@ -76,6 +76,37 @@ async fn main() -> Result<(), Error> {
 
     log::info!("debut : {}", start.format("%Y-%m-%d %H:%M:%S"));
 
+    let args: Vec<String> = env::args().collect();
+    dbg!(&args);
+
+    //let arg0: Vec<String>=args.iter().map(|x| x.clone()).collect();
+    let arg0: Vec<String>=args.clone();
+    if arg0.len() >= 1 {
+        log::info!("param1 : {}", arg0[0]);
+    }
+    if arg0.len() >= 2 {
+        log::info!("param2 : {}", arg0[1]);
+    }
+    if arg0.len() >= 3 {
+        log::info!("param3 : {}", arg0[2]);
+    }
+
+
+    traitement(handle).await;
+
+    let end = Local::now();
+
+    let diff = end - start;
+
+    log::info!("fin : {}", end.format("%Y-%m-%d %H:%M:%S"));
+
+    log::info!("duree totale : {}", diff);
+    Ok(())
+}
+
+async fn traitement(handle: Handle) {
+    let nb_appel_max: u64;
+    
     //nb_appel_max = 3;
     //nb_appel_max = 10;
     nb_appel_max = 0;
@@ -125,8 +156,8 @@ async fn main() -> Result<(), Error> {
         if !initialisation {
             since = data[DATA_DATE].as_u64().unwrap();
         }
-        if data.is_object() && data.as_object().unwrap().contains_key(DATA_LISTE){
-            let obj= data.as_object().unwrap().get(DATA_LISTE).unwrap().as_object().unwrap();
+        if data.is_object() && data.as_object().unwrap().contains_key(DATA_LISTE) {
+            let obj = data.as_object().unwrap().get(DATA_LISTE).unwrap().as_object().unwrap();
             log::info!("taille au debut: {}", obj.len());
         }
     } else {
@@ -293,7 +324,7 @@ async fn main() -> Result<(), Error> {
                                 .as_str()
                                 .unwrap_or("")
                                 .parse::<i32>()
-                                .unwrap_or(0);                            
+                                .unwrap_or(0);
                         }
                         if res2.contains_key("time_updated") {
                             time_updated = res2["time_updated"]
@@ -314,14 +345,14 @@ async fn main() -> Result<(), Error> {
                         } else {
                             max_added = max(max_added, time_added);
                         }
-                        if last_added>0{
-                            if ordered_added{
-                                if last_added>time_added{
+                        if last_added > 0 {
+                            if ordered_added {
+                                if last_added > time_added {
                                     ordered_added = false;
                                 }
                             }
                         }
-                        last_added= time_added;
+                        last_added = time_added;
                     }
                     if time_updated > 0 {
                         if min_updated == 0 {
@@ -334,14 +365,14 @@ async fn main() -> Result<(), Error> {
                         } else {
                             max_updated = max(max_updated, time_updated);
                         }
-                        if last_updated>0{
-                            if ordered_updated{
-                                if last_updated>time_updated{
+                        if last_updated > 0 {
+                            if ordered_updated {
+                                if last_updated > time_updated {
                                     ordered_updated = false;
                                 }
                             }
                         }
-                        last_updated= time_updated;
+                        last_updated = time_updated;
                     }
                     let s0 = format!(
                         "({},{},{},{})",
@@ -430,15 +461,6 @@ async fn main() -> Result<(), Error> {
     log::info!("termine : {}", count);
 
     save_as_json_list(&data, &fichier);
-
-    let end = Local::now();
-
-    let diff = end - start;
-
-    log::info!("fin : {}", end.format("%Y-%m-%d %H:%M:%S"));
-
-    log::info!("duree totale : {}", diff);
-    Ok(())
 }
 
 fn backup_data(config: Config, fichier: &String) -> std::io::Result<()> {
