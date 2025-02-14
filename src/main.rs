@@ -101,16 +101,21 @@ async fn main() -> Result<(), Error> {
         }
     }
 
+    let fichier = config.repertoire.clone() + "/data.json";
+
+    let config2 = config.clone();
+    backup_data(config2, &fichier.clone()).unwrap();
+
     match date_opt {
         Some(date) => {
             for i in 0..max_jours {
                 let date2 = date + chrono::Duration::days(i as i64);
                 log::info!("traitement de : {}", date2);
-                traitement(config.clone(), Some(date2), nb_count_max).await;
+                traitement(config.clone(), Some(date2), nb_count_max, fichier.clone()).await;
             }
         }
         None => {
-            traitement(config, date_opt, nb_count_max).await;
+            traitement(config, date_opt, nb_count_max, fichier.clone()).await;
         }
     }
 
@@ -156,7 +161,12 @@ fn init_config(handle: Handle) -> Result<Config, Error> {
     Ok(config)
 }
 
-async fn traitement(config: Config, date_opt: Option<DateTime<FixedOffset>>, nb_count_max: i32) {
+async fn traitement(
+    config: Config,
+    date_opt: Option<DateTime<FixedOffset>>,
+    nb_count_max: i32,
+    fichier: String,
+) {
     let nb_appel_max: u64;
 
     if nb_count_max > 0 {
@@ -172,10 +182,10 @@ async fn traitement(config: Config, date_opt: Option<DateTime<FixedOffset>>, nb_
     let request_url2 = config.url.clone();
     log::info!("{}", request_url2);
 
-    let fichier = config.repertoire.clone() + "/data.json";
+    //let fichier = config.repertoire.clone() + "/data.json";
 
-    let config2 = config.clone();
-    backup_data(config2, &fichier.clone()).unwrap();
+    // let config2 = config.clone();
+    // backup_data(config2, &fichier.clone()).unwrap();
 
     let mut count = 0u64;
     let mut offset = 0u64;
@@ -185,9 +195,9 @@ async fn traitement(config: Config, date_opt: Option<DateTime<FixedOffset>>, nb_
     let mut data: Value;
 
     let initialisation: bool;
-    
+
     let nb_sauvegarde: u64;
-    
+
     if config.sauvegarde > 0 {
         nb_sauvegarde = config.sauvegarde;
     } else {
