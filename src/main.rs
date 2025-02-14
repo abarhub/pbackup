@@ -1,4 +1,4 @@
-use chrono::Local;
+use chrono::{DateTime, FixedOffset, Local};
 use log::LevelFilter;
 use log4rs::append::console::ConsoleAppender;
 use log4rs::config::{Appender, Root};
@@ -23,6 +23,7 @@ struct Config {
     repertoire: String,
     temporisation: u64,
     config_log: String,
+    sauvegarde: u64,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -60,39 +61,58 @@ impl fmt::Display for Parameters {
 
 #[tokio::main]
 async fn main() -> Result<(), Error> {
-    let nb_appel_max: u64;
-
     let start = Local::now();
     println!("debut : {}", start.format("%Y-%m-%d %H:%M:%S"));
 
-    let stdout = ConsoleAppender::builder().build();
-
-    let config = log4rs::config::Config::builder()
-        .appender(Appender::builder().build("stdout", Box::new(stdout)))
-        .build(Root::builder().appender("stdout").build(LevelFilter::Info))
-        .unwrap();
-
-    let handle = log4rs::init_config(config).unwrap();
+    let handle = init_logs();
 
     log::info!("debut : {}", start.format("%Y-%m-%d %H:%M:%S"));
+
+    let config: Config = init_config(handle)?;
 
     let args: Vec<String> = env::args().collect();
     dbg!(&args);
 
     //let arg0: Vec<String>=args.iter().map(|x| x.clone()).collect();
-    let arg0: Vec<String>=args.clone();
+    let arg0: Vec<String> = args.clone();
     if arg0.len() >= 1 {
         log::info!("param1 : {}", arg0[0]);
     }
     if arg0.len() >= 2 {
         log::info!("param2 : {}", arg0[1]);
     }
+    let mut date_opt: Option<DateTime<FixedOffset>> = None;
+    let mut nb_count_max = -1;
+    let mut max_jours = 10;
     if arg0.len() >= 3 {
         log::info!("param3 : {}", arg0[2]);
+        let s = arg0[2].clone();
+        let s2 = s + "T00:00:00+00:00";
+        let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
+        date_opt = Some(datetime);
+        nb_count_max = 2;
+        if arg0.len() >= 4 {
+            log::info!("param4 : {}", arg0[3]);
+            let s = arg0[3].clone();
+            let nb = s.parse::<i32>().unwrap_or(0);
+            if nb > 0 {
+                max_jours = nb;
+            }
+        }
     }
 
-
-    traitement(handle).await;
+    match date_opt {
+        Some(date) => {
+            for i in 0..max_jours {
+                let date2 = date + chrono::Duration::days(i as i64);
+                log::info!("traitement de : {}", date2);
+                traitement(config.clone(), Some(date2), nb_count_max).await;
+            }
+        }
+        None => {
+            traitement(config, date_opt, nb_count_max).await;
+        }
+    }
 
     let end = Local::now();
 
@@ -104,13 +124,19 @@ async fn main() -> Result<(), Error> {
     Ok(())
 }
 
-async fn traitement(handle: Handle) {
-    let nb_appel_max: u64;
-    
-    //nb_appel_max = 3;
-    //nb_appel_max = 10;
-    nb_appel_max = 0;
+fn init_logs() -> Handle {
+    let stdout = ConsoleAppender::builder().build();
 
+    let config = log4rs::config::Config::builder()
+        .appender(Appender::builder().build("stdout", Box::new(stdout)))
+        .build(Root::builder().appender("stdout").build(LevelFilter::Info))
+        .unwrap();
+
+    let handle = log4rs::init_config(config).unwrap();
+    handle
+}
+
+fn init_config(handle: Handle) -> Result<Config, Error> {
     let config_or_err = get_config(handle);
 
     let config: Config;
@@ -124,7 +150,22 @@ async fn traitement(handle: Handle) {
             std::process::exit(1);
         }
     }
+
     log::info!("Configuration chargée : {:?}", config);
+
+    Ok(config)
+}
+
+async fn traitement(config: Config, date_opt: Option<DateTime<FixedOffset>>, nb_count_max: i32) {
+    let nb_appel_max: u64;
+
+    if nb_count_max > 0 {
+        nb_appel_max = nb_count_max.try_into().unwrap();
+    } else {
+        //nb_appel_max = 3;
+        //nb_appel_max = 10;
+        nb_appel_max = 0;
+    }
 
     log::info!("logging configure");
 
@@ -144,6 +185,14 @@ async fn traitement(handle: Handle) {
     let mut data: Value;
 
     let initialisation: bool;
+    
+    let nb_sauvegarde: u64;
+    
+    if config.sauvegarde > 0 {
+        nb_sauvegarde = config.sauvegarde;
+    } else {
+        nb_sauvegarde = 10;
+    }
 
     let is_present = Path::new(&fichier.clone()).exists();
     if is_present {
@@ -154,10 +203,23 @@ async fn traitement(handle: Handle) {
         offset = data[DATA_OFFSET].as_u64().unwrap_or(0);
         initialisation = data[DATA_ETAT].as_str().unwrap_or("") == DATA_ETAT_INITIALISATION;
         if !initialisation {
-            since = data[DATA_DATE].as_u64().unwrap();
+            if date_opt.is_none() {
+                since = data[DATA_DATE].as_u64().unwrap();
+                log::info!("since file: {}", since);
+            } else {
+                since = date_opt.unwrap().timestamp().unsigned_abs();
+                offset = 0;
+                log::info!("since param: {}", since);
+            }
         }
         if data.is_object() && data.as_object().unwrap().contains_key(DATA_LISTE) {
-            let obj = data.as_object().unwrap().get(DATA_LISTE).unwrap().as_object().unwrap();
+            let obj = data
+                .as_object()
+                .unwrap()
+                .get(DATA_LISTE)
+                .unwrap()
+                .as_object()
+                .unwrap();
             log::info!("taille au debut: {}", obj.len());
         }
     } else {
@@ -447,7 +509,7 @@ async fn traitement(handle: Handle) {
             break;
         }
 
-        if count % 10 == 0 {
+        if count % nb_sauvegarde == 0 {
             save_as_json_list(&data, &fichier);
         }
 
