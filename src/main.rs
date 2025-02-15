@@ -14,6 +14,7 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 use std::{env, fmt, fs, thread};
+use std::ptr::null;
 
 #[derive(Debug, Deserialize, Clone)]
 struct Config {
@@ -24,6 +25,15 @@ struct Config {
     temporisation: u64,
     config_log: String,
     sauvegarde: u64,
+    rechargement: ConfigRechargement
+}
+
+#[derive(Debug, Deserialize, Clone)]
+struct ConfigRechargement {
+    dateDebut: String,
+    dates: Vec<String>,
+    nb_jours: i32,
+    nb_parcourt: i32
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -99,7 +109,25 @@ async fn main() -> Result<(), Error> {
                 max_jours = nb;
             }
         }
+    } else {
+        let config2=config.clone();
+        if !config2.rechargement.dateDebut.trim().is_empty() {
+            let s=config2.rechargement.dateDebut.trim().to_string();
+            log::info!("config date : {}", s);
+            let s2 = s + "T00:00:00+00:00";
+            let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
+            date_opt = Some(datetime);
+            nb_count_max = 2;            
+            if config2.rechargement.nb_jours>0 {
+                max_jours=config2.rechargement.nb_jours;
+            }
+            if config2.rechargement.nb_parcourt>0 {
+                nb_count_max=config2.rechargement.nb_parcourt;
+            }
+        }
     }
+
+    log::info!("date : {:?}, nb_count_max : {}, max_jours : {}", date_opt,nb_count_max, max_jours);
 
     let fichier = config.repertoire.clone() + "/data.json";
 

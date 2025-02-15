@@ -4,6 +4,13 @@ access_token = ''
 repertoire = 'data'
 temporisation = 15000
 config_log = 'config/log4rs.yml'
+sauvegarde = 10
+
+[rechargement]
+dateDebut = ''
+dates=[]
+nb_jours=0
+nb_parcourt=0
 
 
 
