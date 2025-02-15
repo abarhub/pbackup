@@ -14,7 +14,6 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 use std::{env, fmt, fs, thread};
-use std::ptr::null;
 
 #[derive(Debug, Deserialize, Clone)]
 struct Config {
@@ -30,7 +29,7 @@ struct Config {
 
 #[derive(Debug, Deserialize, Clone)]
 struct ConfigRechargement {
-    dateDebut: String,
+    date_debut: String,
     dates: Vec<String>,
     nb_jours: i32,
     nb_parcourt: i32
@@ -111,8 +110,8 @@ async fn main() -> Result<(), Error> {
         }
     } else {
         let config2=config.clone();
-        if !config2.rechargement.dateDebut.trim().is_empty() {
-            let s=config2.rechargement.dateDebut.trim().to_string();
+        if !config2.rechargement.date_debut.trim().is_empty() {
+            let s=config2.rechargement.date_debut.trim().to_string();
             log::info!("config date : {}", s);
             let s2 = s + "T00:00:00+00:00";
             let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();

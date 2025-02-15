@@ -7,7 +7,7 @@ config_log = 'config/log4rs.yml'
 sauvegarde = 10
 
 [rechargement]
-dateDebut = ''
+date_debut = ''
 dates=[]
 nb_jours=0
 nb_parcourt=0
