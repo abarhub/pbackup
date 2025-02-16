@@ -93,6 +93,7 @@ async fn main() -> Result<(), Error> {
     let mut date_opt: Option<DateTime<FixedOffset>> = None;
     let mut nb_count_max = -1;
     let mut max_jours = 10;
+    let mut liste_dates: Vec<DateTime<FixedOffset>> = Vec::new();
     if arg0.len() >= 3 {
         log::info!("param3 : {}", arg0[2]);
         let s = arg0[2].clone();
@@ -123,10 +124,23 @@ async fn main() -> Result<(), Error> {
             if config2.rechargement.nb_parcourt>0 {
                 nb_count_max=config2.rechargement.nb_parcourt;
             }
+        } else if !config2.rechargement.dates.is_empty() {
+            log::info!("config dates : {:?}", config2.rechargement.dates);
+            nb_count_max=2;
+            for date_str in &config2.rechargement.dates {
+                let d=date_str.clone();
+                let s2 = d + "T00:00:00+00:00";
+                let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
+                liste_dates.push(datetime);
+            }
+            if config2.rechargement.nb_parcourt>0 {
+                nb_count_max=config2.rechargement.nb_parcourt;
+            }
         }
     }
 
     log::info!("date : {:?}, nb_count_max : {}, max_jours : {}", date_opt,nb_count_max, max_jours);
+    log::info!("dates : {:?}", liste_dates);
 
     let fichier = config.repertoire.clone() + "/data.json";
 
@@ -135,6 +149,7 @@ async fn main() -> Result<(), Error> {
 
     match date_opt {
         Some(date) => {
+            log::info!("parcourt de dates consecutives");
             for i in 0..max_jours {
                 let date2 = date + chrono::Duration::days(i as i64);
                 log::info!("traitement de : {}", date2);
@@ -142,7 +157,16 @@ async fn main() -> Result<(), Error> {
             }
         }
         None => {
-            traitement(config, date_opt, nb_count_max, fichier.clone()).await;
+            if liste_dates.len() > 0 {
+                log::info!("parcourt de dates");
+                for date in liste_dates.iter() {
+                    log::info!("traitement de : {}", date);
+                    traitement(config.clone(), Some(*date), nb_count_max, fichier.clone()).await;
+                }
+            } else {
+                log::info!("mise à jours");
+                traitement(config, date_opt, nb_count_max, fichier.clone()).await;
+            }            
         }
     }
 
