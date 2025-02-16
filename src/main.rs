@@ -35,6 +35,15 @@ struct ConfigRechargement {
     nb_parcourt: i32
 }
 
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConfigParam {
+    pub date_dernier_traiment: String,
+    pub offset: i64,
+    pub etat: String,
+}
+
+
 #[derive(Serialize, Deserialize, Debug)]
 struct Parameters {
     consumer_key: String,
@@ -244,6 +253,7 @@ async fn traitement(
     let mut dernier_since = 0u64;
 
     let mut data: Value;
+    let mut data_param: ConfigParam;
 
     let initialisation: bool;
 
@@ -291,6 +301,21 @@ async fn traitement(
             DATA_LISTE: {}
         });
         initialisation = true;
+    }
+
+    let fichier_param=fichier.clone()+"/../param.json";
+    let is_present = Path::new(&fichier_param.clone()).exists();
+    if is_present {
+
+        let file = File::open(fichier_param.clone()).expect("file should open read only");
+        data_param = serde_json::from_reader(file).expect("file should be proper JSON");
+    } else {
+        let p=ConfigParam{
+            date_dernier_traiment:"".to_string(),
+            offset:0,
+            etat:"".to_string(),
+        };
+        data_param=p;
     }
 
     let mut total_ajout = 0;
@@ -571,7 +596,7 @@ async fn traitement(
         }
 
         if count % nb_sauvegarde == 0 {
-            save_as_json_list(&data, &fichier);
+            save_as_json_list(&data, &fichier, &data_param, &fichier_param);
         }
 
         if config.temporisation > 0 {
@@ -583,7 +608,7 @@ async fn traitement(
 
     log::info!("termine : {}", count);
 
-    save_as_json_list(&data, &fichier);
+    save_as_json_list(&data, &fichier, &data_param, &fichier_param);
 }
 
 fn backup_data(config: Config, fichier: &String) -> std::io::Result<()> {
@@ -632,7 +657,7 @@ fn get_config(handle: Handle) -> Result<Config, Box<dyn std::error::Error>> {
     Ok(config)
 }
 
-fn save_as_json_list(list: &Value, fname: &str) {
+fn save_as_json_list(list: &Value, fname: &str, param: &ConfigParam, fname_param: &String) {
     log::info!("Sauvegarde de {} ...", fname);
     let list_as_json = serde_json::to_string(list).unwrap();
 
@@ -641,4 +666,14 @@ fn save_as_json_list(list: &Value, fname: &str) {
     file.write_all(list_as_json.as_bytes())
         .expect("Cannot write to the file!");
     log::info!("Fichier {} sauve", fname);
+
+    log::info!("Sauvegarde de {} ...", fname_param);
+
+    let list_as_json = serde_json::to_string(param).unwrap();
+
+    let mut file = File::create(fname_param).expect("Could not create file!");
+
+    file.write_all(list_as_json.as_bytes())
+        .expect("Cannot write to the file!");
+    log::info!("Fichier {} sauve", fname_param);
 }
