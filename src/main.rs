@@ -106,9 +106,22 @@ async fn main() -> Result<(), Error> {
     if arg0.len() >= 3 {
         log::info!("param3 : {}", arg0[2]);
         let s = arg0[2].clone();
-        let s2 = s + "T00:00:00+00:00";
-        let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
-        date_opt = Some(datetime);
+        //let s2: String;
+        let test = s.parse::<u64>();
+        match test {
+            Ok(ok) => {
+                let datetime = DateTime::from_timestamp_millis(ok as i64*1000).unwrap().fixed_offset();
+                date_opt = Some(datetime);
+            },
+            Err(e) => {
+                let s2 = s + "T00:00:00+00:00";
+                let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
+                date_opt = Some(datetime);
+            },
+        }
+        // let s2 = s + "T00:00:00+00:00";
+        // let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
+        // date_opt = Some(datetime);
         nb_count_max = 2;
         if arg0.len() >= 4 {
             log::info!("param4 : {}", arg0[3]);
@@ -123,9 +136,21 @@ async fn main() -> Result<(), Error> {
         if !config2.rechargement.date_debut.trim().is_empty() {
             let s=config2.rechargement.date_debut.trim().to_string();
             log::info!("config date : {}", s);
-            let s2 = s + "T00:00:00+00:00";
-            let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
-            date_opt = Some(datetime);
+            // let s2 = s + "T00:00:00+00:00";
+            // let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
+            let test = s.parse::<u64>();
+            match test {
+                Ok(ok) => {
+                    let datetime = DateTime::from_timestamp_millis(ok as i64*1000).unwrap().fixed_offset();
+                    date_opt = Some(datetime);
+                },
+                Err(e) => {
+                    let s2 = s + "T00:00:00+00:00";
+                    let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
+                    date_opt = Some(datetime);
+                },
+            }
+            // date_opt = Some(datetime);
             nb_count_max = 2;            
             if config2.rechargement.nb_jours>0 {
                 max_jours=config2.rechargement.nb_jours;
