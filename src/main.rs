@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset, Local};
+use chrono::{DateTime, FixedOffset, Local, Utc};
 use log::LevelFilter;
 use log4rs::append::console::ConsoleAppender;
 use log4rs::config::{Appender, Root};
@@ -12,7 +12,7 @@ use std::cmp::{max, min};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, UNIX_EPOCH};
 use std::{env, fmt, fs, thread};
 
 #[derive(Debug, Deserialize, Clone)]
@@ -38,7 +38,7 @@ struct ConfigRechargement {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ConfigParam {
-    pub date_dernier_traiment: String,
+    pub date_dernier_traiment: u64,
     pub offset: i64,
     pub etat: String,
 }
@@ -177,9 +177,12 @@ async fn main() -> Result<(), Error> {
     log::info!("dates : {:?}", liste_dates);
 
     let fichier = config.repertoire.clone() + "/data.json";
+    let fichier_param = config.repertoire.clone() + "/param.json";
 
     let config2 = config.clone();
-    backup_data(config2, &fichier.clone()).unwrap();
+    backup_data(config2, &fichier.clone(), &"data".to_string()).unwrap();
+    let config3=config.clone();
+    backup_data(config3.clone(), &fichier_param.clone(), &"param".to_string()).unwrap();
 
     match date_opt {
         Some(date) => {
@@ -187,7 +190,7 @@ async fn main() -> Result<(), Error> {
             for i in 0..max_jours {
                 let date2 = date + chrono::Duration::days(i as i64);
                 log::info!("traitement de : {}", date2);
-                traitement(config.clone(), Some(date2), nb_count_max, fichier.clone()).await;
+                traitement(config.clone(), Some(date2), nb_count_max, fichier.clone(), fichier_param.clone()).await;
             }
         }
         None => {
@@ -195,11 +198,11 @@ async fn main() -> Result<(), Error> {
                 log::info!("parcourt de dates");
                 for date in liste_dates.iter() {
                     log::info!("traitement de : {}", date);
-                    traitement(config.clone(), Some(*date), nb_count_max, fichier.clone()).await;
+                    traitement(config.clone(), Some(*date), nb_count_max, fichier.clone(), fichier_param.clone()).await;
                 }
             } else {
                 log::info!("mise à jours");
-                traitement(config, date_opt, nb_count_max, fichier.clone()).await;
+                traitement(config, date_opt, nb_count_max, fichier.clone(), fichier_param.clone()).await;
             }            
         }
     }
@@ -251,6 +254,7 @@ async fn traitement(
     date_opt: Option<DateTime<FixedOffset>>,
     nb_count_max: i32,
     fichier: String,
+    fichier_param: String,
 ) {
     let nb_appel_max: u64;
 
@@ -328,7 +332,7 @@ async fn traitement(
         initialisation = true;
     }
 
-    let fichier_param=fichier.clone()+"/../param.json";
+    let fichier_param=fichier_param;//fichier.clone()+"/../param.json";
     let is_present = Path::new(&fichier_param.clone()).exists();
     if is_present {
 
@@ -336,7 +340,7 @@ async fn traitement(
         data_param = serde_json::from_reader(file).expect("file should be proper JSON");
     } else {
         let p=ConfigParam{
-            date_dernier_traiment:"".to_string(),
+            date_dernier_traiment:0,
             offset:0,
             etat:"".to_string(),
         };
@@ -560,7 +564,7 @@ async fn traitement(
                     s.push_str(s0.as_str());
                 }
                 log::info!("nb_ajout: {}, nb_remplace: {}", nb_ajout, nb_remplace);
-                log::info!("elements: {}", s);
+                log::debug!("elements: {}", s);
                 log::info!(
                     "added: ({},{},{}), updated: ({},{},{})",
                     min_added,
@@ -573,6 +577,7 @@ async fn traitement(
                 total_ajout += nb_ajout;
                 total_modifie += nb_remplace;
                 data[DATA_OFFSET] = Value::Number(Number::from(offset));
+                data_param.offset= offset as i64;
                 let date = obj["since"].as_i64().unwrap_or(-1);
                 if date > 0 {
                     dernier_since = date as u64;
@@ -587,11 +592,18 @@ async fn traitement(
             if dernier_since > 0 {
                 data[DATA_DATE] = Value::Number(Number::from(dernier_since));
                 //data[DATA_OFFSET] = Value::Number(Number::from(0));
+                // let d = UNIX_EPOCH + Duration::from_secs(dernier_since);
+                // // Create DateTime from SystemTime
+                // let datetime = DateTime::<Utc>::from(d);
+                // // Formats the combined date and time with the specified format string.
+                // let timestamp_str = datetime.format("%Y-%m-%d").to_string();
+                data_param.date_dernier_traiment=dernier_since;
                 log::info!("mise à jour du since: {}", dernier_since);
             }
             if initialisation && false {
                 log::info!("fin d'initialisation");
                 data[DATA_ETAT] = Value::String(DATA_ETAT_MISE_A_JOUR.to_string());
+                data_param.etat=DATA_ETAT_MISE_A_JOUR.to_string();
                 log::info!("mise à jour de l'etat: {}", data[DATA_ETAT]);
             }
             break;
@@ -636,7 +648,7 @@ async fn traitement(
     save_as_json_list(&data, &fichier, &data_param, &fichier_param);
 }
 
-fn backup_data(config: Config, fichier: &String) -> std::io::Result<()> {
+fn backup_data(config: Config, fichier: &String, debut_nom_fichier: &String) -> std::io::Result<()> {
     let date = Local::now();
 
     let is_present = Path::new(fichier).exists();
@@ -644,10 +656,10 @@ fn backup_data(config: Config, fichier: &String) -> std::io::Result<()> {
         let mut s2: String = "".to_owned();
         let s = date.timestamp().to_string();
         let rep = config.repertoire.as_str();
-        s2.push_str("/backup/data_");
+        s2.push_str(format!("/backup/{debut_nom_fichier}_").as_str());
         s2.push_str(&s);
         s2.push_str(".json");
-        let file_resultat = format!("{rep}/backup/data_{s}.json");
+        let file_resultat = format!("{rep}/backup/{debut_nom_fichier}_{s}.json");
         fs::copy(fichier, &file_resultat)?;
         log::info!("copie vers : {}", file_resultat);
     }
