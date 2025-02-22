@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, NaiveTime, Utc};
+use chrono::{DateTime, FixedOffset, Local, NaiveTime};
 use log::LevelFilter;
 use log4rs::append::console::ConsoleAppender;
 use log4rs::config::{Appender, Root};
@@ -7,12 +7,12 @@ use reqwest;
 use reqwest::Error;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
-use serde_json::{Number, Value};
+use serde_json::{Value};
 use std::cmp::{max, min};
 use std::fs::File;
-use std::io::{empty, Write};
+use std::io::{Write};
 use std::path::Path;
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration};
 use std::{env, fmt, fs, thread};
 
 #[derive(Debug, Deserialize, Clone)]
@@ -383,9 +383,9 @@ async fn traitement(
                 if data_param.date_dernier_traiment > 0 {
                     since = data_param.date_dernier_traiment;
                     // offset= data_param.offset as u64;
-                } else {
+                } /*else {
                     since = data[DATA_DATE].as_u64().unwrap();
-                }
+                }*/
                 log::info!("since file: {}", since);
             } else {
                 since = config_force.date_opt.unwrap().timestamp().unsigned_abs();
@@ -649,7 +649,7 @@ async fn traitement(
                 );
                 total_ajout += nb_ajout;
                 total_modifie += nb_remplace;
-                data[DATA_OFFSET] = Value::Number(Number::from(offset));
+                //data[DATA_OFFSET] = Value::Number(Number::from(offset));
                 if data_param.etat == DATA_ETAT_SPECIFIQUE {
                     data_param.offset = offset as i64;
                 }
@@ -665,7 +665,7 @@ async fn traitement(
         if fin {
             log::info!("Pas de liste");
             if dernier_since > 0 {
-                data[DATA_DATE] = Value::Number(Number::from(dernier_since));
+                //data[DATA_DATE] = Value::Number(Number::from(dernier_since));
                 //data[DATA_OFFSET] = Value::Number(Number::from(0));
                 // let d = UNIX_EPOCH + Duration::from_secs(dernier_since);
                 // // Create DateTime from SystemTime
@@ -698,7 +698,7 @@ async fn traitement(
             }
             if initialisation && false {
                 log::info!("fin d'initialisation");
-                data[DATA_ETAT] = Value::String(DATA_ETAT_MISE_A_JOUR.to_string());
+                //data[DATA_ETAT] = Value::String(DATA_ETAT_MISE_A_JOUR.to_string());
                 data_param.etat = DATA_ETAT_MISE_A_JOUR.to_string();
                 log::info!("mise à jour de l'etat: {}", data[DATA_ETAT]);
             }
@@ -748,7 +748,7 @@ async fn traitement(
 
 fn init_config_param(fichier_param: String) -> ConfigParam {
     let data_param: ConfigParam;
-    let fichier_param = fichier_param; //fichier.clone()+"/../param.json";
+    //let fichier_param = fichier_param; //fichier.clone()+"/../param.json";
     let is_present = Path::new(&fichier_param.clone()).exists();
     if is_present {
         let file = File::open(fichier_param.clone()).expect("file should open read only");
