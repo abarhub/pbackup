@@ -65,6 +65,7 @@ const DATA_LISTE: &str = "liste";
 
 const DATA_ETAT_INITIALISATION: &str = "initialisation";
 const DATA_ETAT_MISE_A_JOUR: &str = "miseAJour";
+const DATA_ETAT_SPECIFIQUE: &str = "specifique";
 
 impl fmt::Display for Parameters {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -103,6 +104,7 @@ async fn main() -> Result<(), Error> {
     let mut nb_count_max = -1;
     let mut max_jours = 10;
     let mut liste_dates: Vec<DateTime<FixedOffset>> = Vec::new();
+    let mut suite_config_date=false;
     if arg0.len() >= 3 {
         log::info!("param3 : {}", arg0[2]);
         let s = arg0[2].clone();
@@ -170,6 +172,8 @@ async fn main() -> Result<(), Error> {
             if config2.rechargement.nb_parcourt>0 {
                 nb_count_max=config2.rechargement.nb_parcourt;
             }
+        } else {
+            suite_config_date=true;
         }
     }
 
@@ -184,13 +188,24 @@ async fn main() -> Result<(), Error> {
     let config3=config.clone();
     backup_data(config3.clone(), &fichier_param.clone(), &"param".to_string()).unwrap();
 
+    let mut config_param=init_config_param(fichier_param.clone());
+    
+    if suite_config_date && date_opt.is_none() {
+        if config_param.date_dernier_traiment>0 {
+            
+        }
+    }
+    
     match date_opt {
         Some(date) => {
             log::info!("parcourt de dates consecutives");
             for i in 0..max_jours {
                 let date2 = date + chrono::Duration::days(i as i64);
                 log::info!("traitement de : {}", date2);
-                traitement(config.clone(), Some(date2), nb_count_max, fichier.clone(), fichier_param.clone()).await;
+                config_param.etat=DATA_ETAT_SPECIFIQUE.to_string();
+                config_param.offset=0;
+                config_param.date_dernier_traiment=date.timestamp() as u64;
+                traitement(config.clone(), Some(date2), nb_count_max, fichier.clone(), fichier_param.clone(), config_param.clone()).await;
             }
         }
         None => {
@@ -198,11 +213,14 @@ async fn main() -> Result<(), Error> {
                 log::info!("parcourt de dates");
                 for date in liste_dates.iter() {
                     log::info!("traitement de : {}", date);
-                    traitement(config.clone(), Some(*date), nb_count_max, fichier.clone(), fichier_param.clone()).await;
+                    config_param.etat=DATA_ETAT_SPECIFIQUE.to_string();
+                    config_param.offset=0;
+                    config_param.date_dernier_traiment=date.timestamp() as u64;
+                    traitement(config.clone(), Some(*date), nb_count_max, fichier.clone(), fichier_param.clone(), config_param.clone()).await;
                 }
             } else {
                 log::info!("mise à jours");
-                traitement(config, date_opt, nb_count_max, fichier.clone(), fichier_param.clone()).await;
+                traitement(config, date_opt, nb_count_max, fichier.clone(), fichier_param.clone(), config_param.clone()).await;
             }            
         }
     }
@@ -255,6 +273,7 @@ async fn traitement(
     nb_count_max: i32,
     fichier: String,
     fichier_param: String,
+    mut data_param: ConfigParam
 ) {
     let nb_appel_max: u64;
 
@@ -282,7 +301,7 @@ async fn traitement(
     let mut dernier_since = 0u64;
 
     let mut data: Value;
-    let mut data_param: ConfigParam;
+    //let mut data_param: ConfigParam;
 
     let initialisation: bool;
 
@@ -300,11 +319,18 @@ async fn traitement(
         let json: Value = serde_json::from_reader(file).expect("file should be proper JSON");
 
         data = json;
-        offset = data[DATA_OFFSET].as_u64().unwrap_or(0);
-        initialisation = data[DATA_ETAT].as_str().unwrap_or("") == DATA_ETAT_INITIALISATION;
+        // offset = data[DATA_OFFSET].as_u64().unwrap_or(0);
+        offset= data_param.offset as u64;
+        //initialisation = data[DATA_ETAT].as_str().unwrap_or("") == DATA_ETAT_INITIALISATION;
+        initialisation = data_param.etat.as_str() == DATA_ETAT_INITIALISATION;
         if !initialisation {
             if date_opt.is_none() {
-                since = data[DATA_DATE].as_u64().unwrap();
+                if data_param.date_dernier_traiment>0 {
+                    since=data_param.date_dernier_traiment;
+                    // offset= data_param.offset as u64;
+                } else {
+                    since = data[DATA_DATE].as_u64().unwrap();
+                }
                 log::info!("since file: {}", since);
             } else {
                 since = date_opt.unwrap().timestamp().unsigned_abs();
@@ -330,21 +356,6 @@ async fn traitement(
             DATA_LISTE: {}
         });
         initialisation = true;
-    }
-
-    let fichier_param=fichier_param;//fichier.clone()+"/../param.json";
-    let is_present = Path::new(&fichier_param.clone()).exists();
-    if is_present {
-
-        let file = File::open(fichier_param.clone()).expect("file should open read only");
-        data_param = serde_json::from_reader(file).expect("file should be proper JSON");
-    } else {
-        let p=ConfigParam{
-            date_dernier_traiment:0,
-            offset:0,
-            etat:"".to_string(),
-        };
-        data_param=p;
     }
 
     let mut total_ajout = 0;
@@ -646,6 +657,25 @@ async fn traitement(
     log::info!("termine : {}", count);
 
     save_as_json_list(&data, &fichier, &data_param, &fichier_param);
+}
+
+fn init_config_param(fichier_param: String)->ConfigParam{
+    let data_param:ConfigParam ;
+    let fichier_param=fichier_param;//fichier.clone()+"/../param.json";
+    let is_present = Path::new(&fichier_param.clone()).exists();
+    if is_present {
+
+        let file = File::open(fichier_param.clone()).expect("file should open read only");
+        data_param = serde_json::from_reader(file).expect("file should be proper JSON");
+    } else {
+        let p=ConfigParam{
+            date_dernier_traiment:0,
+            offset:0,
+            etat:"".to_string(),
+        };
+        data_param=p;
+    }
+    data_param
 }
 
 fn backup_data(config: Config, fichier: &String, debut_nom_fichier: &String) -> std::io::Result<()> {
