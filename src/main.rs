@@ -189,13 +189,13 @@ async fn main() -> Result<(), Error> {
     backup_data(config3.clone(), &fichier_param.clone(), &"param".to_string()).unwrap();
 
     let mut config_param=init_config_param(fichier_param.clone());
-    
+
     if suite_config_date && date_opt.is_none() {
         if config_param.date_dernier_traiment>0 {
-            
+
         }
     }
-    
+
     match date_opt {
         Some(date) => {
             log::info!("parcourt de dates consecutives");
@@ -588,7 +588,9 @@ async fn traitement(
                 total_ajout += nb_ajout;
                 total_modifie += nb_remplace;
                 data[DATA_OFFSET] = Value::Number(Number::from(offset));
-                data_param.offset= offset as i64;
+                if data_param.etat==DATA_ETAT_SPECIFIQUE {
+                    data_param.offset = offset as i64;
+                }
                 let date = obj["since"].as_i64().unwrap_or(-1);
                 if date > 0 {
                     dernier_since = date as u64;
@@ -610,6 +612,10 @@ async fn traitement(
                 // let timestamp_str = datetime.format("%Y-%m-%d").to_string();
                 data_param.date_dernier_traiment=dernier_since;
                 log::info!("mise à jour du since: {}", dernier_since);
+                if data_param.etat==DATA_ETAT_MISE_A_JOUR.to_string() {
+                    data_param.offset=0;
+                    log::info!("mise à jour offset: {}", data_param.offset);
+                }
             }
             if initialisation && false {
                 log::info!("fin d'initialisation");
