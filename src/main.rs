@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset, Local, Utc};
+use chrono::{DateTime, FixedOffset, Local, NaiveDateTime, NaiveTime, Utc};
 use log::LevelFilter;
 use log4rs::append::console::ConsoleAppender;
 use log4rs::config::{Appender, Root};
@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use std::cmp::{max, min};
 use std::fs::File;
-use std::io::Write;
+use std::io::{empty, Write};
 use std::path::Path;
 use std::time::{Duration, UNIX_EPOCH};
 use std::{env, fmt, fs, thread};
@@ -24,7 +24,7 @@ struct Config {
     temporisation: u64,
     config_log: String,
     sauvegarde: u64,
-    rechargement: ConfigRechargement
+    rechargement: ConfigRechargement,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -32,7 +32,7 @@ struct ConfigRechargement {
     date_debut: String,
     dates: Vec<String>,
     nb_jours: i32,
-    nb_parcourt: i32
+    nb_parcourt: i32,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -43,6 +43,12 @@ pub struct ConfigParam {
     pub etat: String,
 }
 
+#[derive(Default, Debug, Clone, PartialEq)]
+pub struct ConfigParamForce {
+    pub date_opt: Option<DateTime<FixedOffset>>,
+    pub nb_count_max: i32,
+    pub force: bool,
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Parameters {
@@ -104,7 +110,7 @@ async fn main() -> Result<(), Error> {
     let mut nb_count_max = -1;
     let mut max_jours = 10;
     let mut liste_dates: Vec<DateTime<FixedOffset>> = Vec::new();
-    let mut suite_config_date=false;
+    let mut suite_config_date = false;
     if arg0.len() >= 3 {
         log::info!("param3 : {}", arg0[2]);
         let s = arg0[2].clone();
@@ -112,14 +118,16 @@ async fn main() -> Result<(), Error> {
         let test = s.parse::<u64>();
         match test {
             Ok(ok) => {
-                let datetime = DateTime::from_timestamp_millis(ok as i64*1000).unwrap().fixed_offset();
+                let datetime = DateTime::from_timestamp_millis(ok as i64 * 1000)
+                    .unwrap()
+                    .fixed_offset();
                 date_opt = Some(datetime);
-            },
+            }
             Err(e) => {
                 let s2 = s + "T00:00:00+00:00";
                 let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
                 date_opt = Some(datetime);
-            },
+            }
         }
         // let s2 = s + "T00:00:00+00:00";
         // let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
@@ -134,50 +142,57 @@ async fn main() -> Result<(), Error> {
             }
         }
     } else {
-        let config2=config.clone();
+        let config2 = config.clone();
         if !config2.rechargement.date_debut.trim().is_empty() {
-            let s=config2.rechargement.date_debut.trim().to_string();
+            let s = config2.rechargement.date_debut.trim().to_string();
             log::info!("config date : {}", s);
             // let s2 = s + "T00:00:00+00:00";
             // let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
             let test = s.parse::<u64>();
             match test {
                 Ok(ok) => {
-                    let datetime = DateTime::from_timestamp_millis(ok as i64*1000).unwrap().fixed_offset();
+                    let datetime = DateTime::from_timestamp_millis(ok as i64 * 1000)
+                        .unwrap()
+                        .fixed_offset();
                     date_opt = Some(datetime);
-                },
+                }
                 Err(e) => {
                     let s2 = s + "T00:00:00+00:00";
                     let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
                     date_opt = Some(datetime);
-                },
+                }
             }
             // date_opt = Some(datetime);
-            nb_count_max = 2;            
-            if config2.rechargement.nb_jours>0 {
-                max_jours=config2.rechargement.nb_jours;
+            nb_count_max = 2;
+            if config2.rechargement.nb_jours > 0 {
+                max_jours = config2.rechargement.nb_jours;
             }
-            if config2.rechargement.nb_parcourt>0 {
-                nb_count_max=config2.rechargement.nb_parcourt;
+            if config2.rechargement.nb_parcourt > 0 {
+                nb_count_max = config2.rechargement.nb_parcourt;
             }
         } else if !config2.rechargement.dates.is_empty() {
             log::info!("config dates : {:?}", config2.rechargement.dates);
-            nb_count_max=2;
+            nb_count_max = 2;
             for date_str in &config2.rechargement.dates {
-                let d=date_str.clone();
+                let d = date_str.clone();
                 let s2 = d + "T00:00:00+00:00";
                 let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
                 liste_dates.push(datetime);
             }
-            if config2.rechargement.nb_parcourt>0 {
-                nb_count_max=config2.rechargement.nb_parcourt;
+            if config2.rechargement.nb_parcourt > 0 {
+                nb_count_max = config2.rechargement.nb_parcourt;
             }
         } else {
-            suite_config_date=true;
+            suite_config_date = true;
         }
     }
 
-    log::info!("date : {:?}, nb_count_max : {}, max_jours : {}", date_opt,nb_count_max, max_jours);
+    log::info!(
+        "date : {:?}, nb_count_max : {}, max_jours : {}",
+        date_opt,
+        nb_count_max,
+        max_jours
+    );
     log::info!("dates : {:?}", liste_dates);
 
     let fichier = config.repertoire.clone() + "/data.json";
@@ -185,15 +200,18 @@ async fn main() -> Result<(), Error> {
 
     let config2 = config.clone();
     backup_data(config2, &fichier.clone(), &"data".to_string()).unwrap();
-    let config3=config.clone();
-    backup_data(config3.clone(), &fichier_param.clone(), &"param".to_string()).unwrap();
+    let config3 = config.clone();
+    backup_data(
+        config3.clone(),
+        &fichier_param.clone(),
+        &"param".to_string(),
+    )
+    .unwrap();
 
-    let mut config_param=init_config_param(fichier_param.clone());
+    let mut config_param = init_config_param(fichier_param.clone());
 
     if suite_config_date && date_opt.is_none() {
-        if config_param.date_dernier_traiment>0 {
-
-        }
+        if config_param.date_dernier_traiment > 0 {}
     }
 
     match date_opt {
@@ -202,10 +220,22 @@ async fn main() -> Result<(), Error> {
             for i in 0..max_jours {
                 let date2 = date + chrono::Duration::days(i as i64);
                 log::info!("traitement de : {}", date2);
-                config_param.etat=DATA_ETAT_SPECIFIQUE.to_string();
-                config_param.offset=0;
-                config_param.date_dernier_traiment=date.timestamp() as u64;
-                traitement(config.clone(), Some(date2), nb_count_max, fichier.clone(), fichier_param.clone(), config_param.clone()).await;
+                let config_force = ConfigParamForce {
+                    date_opt: Some(date2),
+                    nb_count_max,
+                    force: true,
+                };
+                config_param.etat = DATA_ETAT_SPECIFIQUE.to_string();
+                config_param.offset = 0;
+                config_param.date_dernier_traiment = date.timestamp() as u64;
+                traitement(
+                    config.clone(),
+                    config_force,
+                    fichier.clone(),
+                    fichier_param.clone(),
+                    config_param.clone(),
+                )
+                .await;
             }
         }
         None => {
@@ -213,15 +243,39 @@ async fn main() -> Result<(), Error> {
                 log::info!("parcourt de dates");
                 for date in liste_dates.iter() {
                     log::info!("traitement de : {}", date);
-                    config_param.etat=DATA_ETAT_SPECIFIQUE.to_string();
-                    config_param.offset=0;
-                    config_param.date_dernier_traiment=date.timestamp() as u64;
-                    traitement(config.clone(), Some(*date), nb_count_max, fichier.clone(), fichier_param.clone(), config_param.clone()).await;
+                    config_param.etat = DATA_ETAT_SPECIFIQUE.to_string();
+                    config_param.offset = 0;
+                    config_param.date_dernier_traiment = date.timestamp() as u64;
+                    let config_force = ConfigParamForce {
+                        date_opt: Some(*date),
+                        nb_count_max,
+                        force: true,
+                    };
+                    traitement(
+                        config.clone(),
+                        config_force,
+                        fichier.clone(),
+                        fichier_param.clone(),
+                        config_param.clone(),
+                    )
+                    .await;
                 }
             } else {
                 log::info!("mise à jours");
-                traitement(config, date_opt, nb_count_max, fichier.clone(), fichier_param.clone(), config_param.clone()).await;
-            }            
+                let config_force = ConfigParamForce {
+                    date_opt: None,
+                    nb_count_max,
+                    force: false,
+                };
+                traitement(
+                    config,
+                    config_force,
+                    fichier.clone(),
+                    fichier_param.clone(),
+                    config_param.clone(),
+                )
+                .await;
+            }
         }
     }
 
@@ -269,16 +323,17 @@ fn init_config(handle: Handle) -> Result<Config, Error> {
 
 async fn traitement(
     config: Config,
-    date_opt: Option<DateTime<FixedOffset>>,
-    nb_count_max: i32,
+    //date_opt: Option<DateTime<FixedOffset>>,
+    //nb_count_max: i32,
+    config_force: ConfigParamForce,
     fichier: String,
     fichier_param: String,
-    mut data_param: ConfigParam
+    mut data_param: ConfigParam,
 ) {
     let nb_appel_max: u64;
 
-    if nb_count_max > 0 {
-        nb_appel_max = nb_count_max.try_into().unwrap();
+    if config_force.force && config_force.nb_count_max > 0 {
+        nb_appel_max = config_force.nb_count_max.try_into().unwrap();
     } else {
         //nb_appel_max = 3;
         //nb_appel_max = 10;
@@ -320,20 +375,20 @@ async fn traitement(
 
         data = json;
         // offset = data[DATA_OFFSET].as_u64().unwrap_or(0);
-        offset= data_param.offset as u64;
+        offset = data_param.offset as u64;
         //initialisation = data[DATA_ETAT].as_str().unwrap_or("") == DATA_ETAT_INITIALISATION;
         initialisation = data_param.etat.as_str() == DATA_ETAT_INITIALISATION;
         if !initialisation {
-            if date_opt.is_none() {
-                if data_param.date_dernier_traiment>0 {
-                    since=data_param.date_dernier_traiment;
+            if !config_force.force {
+                if data_param.date_dernier_traiment > 0 {
+                    since = data_param.date_dernier_traiment;
                     // offset= data_param.offset as u64;
                 } else {
                     since = data[DATA_DATE].as_u64().unwrap();
                 }
                 log::info!("since file: {}", since);
             } else {
-                since = date_opt.unwrap().timestamp().unsigned_abs();
+                since = config_force.date_opt.unwrap().timestamp().unsigned_abs();
                 offset = 0;
                 log::info!("since param: {}", since);
             }
@@ -393,6 +448,8 @@ async fn traitement(
     }
 
     log::info!("parametre de démarrage : {}", param);
+    log::info!("parametre config force : {:?}", config_force);
+    log::info!("parametre data_param : {:?}", data_param);
 
     loop {
         let client = reqwest::Client::new();
@@ -401,7 +458,12 @@ async fn traitement(
 
         let request_url = config.url.clone();
 
-        log::info!("appel serveur offset: {}, since: {:?}", offset, param.since);
+        log::info!(
+            "appel serveur offset: {}, since: {:?} ({:?})",
+            offset,
+            param.since,
+            DateTime::from_timestamp(param.since.unwrap_or(0) as i64, 0).unwrap()
+        );
 
         let response = client
             .post(request_url)
@@ -588,7 +650,7 @@ async fn traitement(
                 total_ajout += nb_ajout;
                 total_modifie += nb_remplace;
                 data[DATA_OFFSET] = Value::Number(Number::from(offset));
-                if data_param.etat==DATA_ETAT_SPECIFIQUE {
+                if data_param.etat == DATA_ETAT_SPECIFIQUE {
                     data_param.offset = offset as i64;
                 }
                 let date = obj["since"].as_i64().unwrap_or(-1);
@@ -610,17 +672,34 @@ async fn traitement(
                 // let datetime = DateTime::<Utc>::from(d);
                 // // Formats the combined date and time with the specified format string.
                 // let timestamp_str = datetime.format("%Y-%m-%d").to_string();
-                data_param.date_dernier_traiment=dernier_since;
-                log::info!("mise à jour du since: {}", dernier_since);
-                if data_param.etat==DATA_ETAT_MISE_A_JOUR.to_string() {
-                    data_param.offset=0;
+
+                //if data_param.etat==DATA_ETAT_MISE_A_JOUR.to_string() {
+                if !config_force.force {
+                    data_param.offset = 0;
+                    let naive = DateTime::from_timestamp(dernier_since as i64, 0).unwrap();
+                    let date = naive
+                        .with_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap())
+                        .unwrap();
+                    data_param.date_dernier_traiment = date.timestamp_millis() as u64;
+                    log::info!(
+                        "mise à jour du since: {} ({:?})",
+                        dernier_since,
+                        DateTime::from_timestamp(dernier_since as i64, 0).unwrap()
+                    );
                     log::info!("mise à jour offset: {}", data_param.offset);
+                } else {
+                    data_param.date_dernier_traiment = dernier_since;
+                    log::info!(
+                        "mise à jour du since: {} ({:?})",
+                        dernier_since,
+                        DateTime::from_timestamp(dernier_since as i64, 0).unwrap()
+                    );
                 }
             }
             if initialisation && false {
                 log::info!("fin d'initialisation");
                 data[DATA_ETAT] = Value::String(DATA_ETAT_MISE_A_JOUR.to_string());
-                data_param.etat=DATA_ETAT_MISE_A_JOUR.to_string();
+                data_param.etat = DATA_ETAT_MISE_A_JOUR.to_string();
                 log::info!("mise à jour de l'etat: {}", data[DATA_ETAT]);
             }
             break;
@@ -654,7 +733,9 @@ async fn traitement(
         }
 
         if config.temporisation > 0 {
+            log::info!("temporisation : {} ms", config.temporisation);
             thread::sleep(Duration::from_millis(config.temporisation));
+            log::info!("temporisation : {} ms OK", config.temporisation);
         }
     }
 
@@ -665,26 +746,29 @@ async fn traitement(
     save_as_json_list(&data, &fichier, &data_param, &fichier_param);
 }
 
-fn init_config_param(fichier_param: String)->ConfigParam{
-    let data_param:ConfigParam ;
-    let fichier_param=fichier_param;//fichier.clone()+"/../param.json";
+fn init_config_param(fichier_param: String) -> ConfigParam {
+    let data_param: ConfigParam;
+    let fichier_param = fichier_param; //fichier.clone()+"/../param.json";
     let is_present = Path::new(&fichier_param.clone()).exists();
     if is_present {
-
         let file = File::open(fichier_param.clone()).expect("file should open read only");
         data_param = serde_json::from_reader(file).expect("file should be proper JSON");
     } else {
-        let p=ConfigParam{
-            date_dernier_traiment:0,
-            offset:0,
-            etat:"".to_string(),
+        let p = ConfigParam {
+            date_dernier_traiment: 0,
+            offset: 0,
+            etat: "".to_string(),
         };
-        data_param=p;
+        data_param = p;
     }
     data_param
 }
 
-fn backup_data(config: Config, fichier: &String, debut_nom_fichier: &String) -> std::io::Result<()> {
+fn backup_data(
+    config: Config,
+    fichier: &String,
+    debut_nom_fichier: &String,
+) -> std::io::Result<()> {
     let date = Local::now();
 
     let is_present = Path::new(fichier).exists();
