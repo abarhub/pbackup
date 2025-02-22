@@ -7,12 +7,12 @@ use reqwest;
 use reqwest::Error;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value};
+use serde_json::Value;
 use std::cmp::{max, min};
 use std::fs::File;
-use std::io::{Write};
+use std::io::Write;
 use std::path::Path;
-use std::time::{Duration};
+use std::time::Duration;
 use std::{env, fmt, fs, thread};
 
 #[derive(Debug, Deserialize, Clone)]
@@ -384,8 +384,8 @@ async fn traitement(
                     since = data_param.date_dernier_traiment;
                     // offset= data_param.offset as u64;
                 } /*else {
-                    since = data[DATA_DATE].as_u64().unwrap();
-                }*/
+                      since = data[DATA_DATE].as_u64().unwrap();
+                  }*/
                 log::info!("since file: {}", since);
             } else {
                 since = config_force.date_opt.unwrap().timestamp().unsigned_abs();
@@ -423,24 +423,25 @@ async fn traitement(
 
     if initialisation {
         param = Parameters {
-            consumer_key: consumer_key,
-            access_token: access_token,
+            consumer_key,
+            access_token,
             //detail_type: "complete".parse().unwrap(),
             detail_type: "simple".parse().unwrap(),
             count: 30,
-            offset: offset,
+            offset,
             total: 1,
             sort: "oldest".parse().unwrap(),
             since: Option::None,
         };
     } else {
+        check_timestamp(&since);
         param = Parameters {
-            consumer_key: consumer_key,
-            access_token: access_token,
+            consumer_key,
+            access_token,
             //detail_type: "complete".parse().unwrap(),
             detail_type: "simple".parse().unwrap(),
             count: 30,
-            offset: offset,
+            offset,
             total: 1,
             sort: "oldest".parse().unwrap(),
             since: Option::Some(since),
@@ -672,15 +673,25 @@ async fn traitement(
                 // let datetime = DateTime::<Utc>::from(d);
                 // // Formats the combined date and time with the specified format string.
                 // let timestamp_str = datetime.format("%Y-%m-%d").to_string();
+                check_timestamp(&dernier_since);
 
                 //if data_param.etat==DATA_ETAT_MISE_A_JOUR.to_string() {
                 if !config_force.force {
                     data_param.offset = 0;
-                    let naive = DateTime::from_timestamp(dernier_since as i64, 0).unwrap();
-                    let date = naive
-                        .with_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap())
-                        .unwrap();
-                    data_param.date_dernier_traiment = date.timestamp_millis() as u64;
+                    //let debut_journee=true;
+                    let debut_journee = false;
+                    if debut_journee {
+                        let naive = DateTime::from_timestamp(dernier_since as i64, 0).unwrap();
+                        let date = naive
+                            .with_time(NaiveTime::from_hms_opt(0, 0, 0).unwrap())
+                            .unwrap();
+                        data_param.date_dernier_traiment = date.timestamp_millis() as u64;
+                    } else {
+                        //data_param.date_dernier_traiment = dernier_since;
+                        let timestamp =(Local::now().timestamp_millis() / 1000) as u64;
+                        check_timestamp(&timestamp);
+                        data_param.date_dernier_traiment = timestamp;
+                    }
                     log::info!(
                         "mise à jour du since: {} ({:?})",
                         dernier_since,
@@ -744,6 +755,15 @@ async fn traitement(
     log::info!("termine : {}", count);
 
     save_as_json_list(&data, &fichier, &data_param, &fichier_param);
+}
+
+fn check_timestamp(since: &u64) {
+    if *since > 1764601526 {
+        panic!("{}", format!("since invalid: {since}"));
+    }
+    if *since <= 100 {
+        panic!("{}", format!("since invalid: {since}"));
+    }
 }
 
 fn init_config_param(fichier_param: String) -> ConfigParam {
