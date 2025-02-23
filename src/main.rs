@@ -522,8 +522,10 @@ async fn traitement(
                 let mut ajout = create_min_max();
                 let mut remplace = create_min_max();
                 for tmp in obj2.iter() {
+                    let mut ajout_element=false;
                     if !liste.as_object().unwrap().contains_key(tmp.0) {
                         nb_ajout += 1;
+                        ajout_element=true;
                     } else {
                         nb_remplace += 1;
                     }
@@ -555,11 +557,12 @@ async fn traitement(
                         remplace.add(time_updated);
                     }
                     let s0 = format!(
-                        "({},{},{},{})",
+                        "({},{},{},{},{})",
                         tmp.0,
                         time_added,
                         time_updated,
-                        time_added == time_updated
+                        time_added == time_updated,
+                        ajout_element
                     );
                     if s.len() > 0 {
                         s.push_str(",")
@@ -567,7 +570,7 @@ async fn traitement(
                     s.push_str(s0.as_str());
                 }
                 log::info!("nb_ajout: {}, nb_remplace: {}", nb_ajout, nb_remplace);
-                log::debug!("elements: {}", s);
+                log::info!("elements: {}", s);
                 log::info!("added: {}, updated: {}", ajout, remplace);
                 total_ajout += nb_ajout;
                 total_modifie += nb_remplace;
