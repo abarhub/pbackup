@@ -155,28 +155,9 @@ async fn main() -> Result<(), Error> {
     if arg0.len() >= 3 {
         log::info!("param3 : {}", arg0[2]);
         let s = arg0[2].clone();
-        //let s2: String;
-        let test = s.parse::<u64>();
-        let date_opt: Option<DateTime<FixedOffset>>;
         let nb_count_max = 2;
         let mut max_jours = 10;
-        match test {
-            Ok(ok) => {
-                let datetime = DateTime::from_timestamp_millis(ok as i64 * 1000)
-                    .unwrap()
-                    .fixed_offset();
-                date_opt = Some(datetime);
-            }
-            Err(e) => {
-                let s2 = s + "T00:00:00+00:00";
-                let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
-                date_opt = Some(datetime);
-            }
-        }
-        // let s2 = s + "T00:00:00+00:00";
-        // let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
-        // date_opt = Some(datetime);
-        //nb_count_max = 2;
+        let date=parse_date(s);
         if arg0.len() >= 4 {
             log::info!("param4 : {}", arg0[3]);
             let s = arg0[3].clone();
@@ -185,44 +166,25 @@ async fn main() -> Result<(), Error> {
                 max_jours = nb;
             }
         }
-        dates = ListeDates::DatesContinues(date_opt.unwrap(), max_jours as u32, nb_count_max);
+        dates = ListeDates::DatesContinues(date, max_jours as u32, nb_count_max);
     } else {
         let config2 = config.clone();
         if !config2.rechargement.date_debut.trim().is_empty() {
             let s = config2.rechargement.date_debut.trim().to_string();
-            let mut date_opt: Option<DateTime<FixedOffset>> = None;
-            let mut nb_count_max = -1;
+            let mut nb_count_max = 2;
             let mut max_jours = 10;
             log::info!("config date : {}", s);
-            // let s2 = s + "T00:00:00+00:00";
-            // let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
-            let test = s.parse::<u64>();
-            match test {
-                Ok(ok) => {
-                    let datetime = DateTime::from_timestamp_millis(ok as i64 * 1000)
-                        .unwrap()
-                        .fixed_offset();
-                    date_opt = Some(datetime);
-                }
-                Err(e) => {
-                    let s2 = s + "T00:00:00+00:00";
-                    let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
-                    date_opt = Some(datetime);
-                }
-            }
-            // date_opt = Some(datetime);
-            nb_count_max = 2;
+            let date=parse_date(s);
             if config2.rechargement.nb_jours > 0 {
                 max_jours = config2.rechargement.nb_jours;
             }
             if config2.rechargement.nb_parcourt > 0 {
                 nb_count_max = config2.rechargement.nb_parcourt;
             }
-            dates = ListeDates::DatesContinues(date_opt.unwrap(), max_jours as u32, nb_count_max);
+            dates = ListeDates::DatesContinues(date, max_jours as u32, nb_count_max);
         } else if !config2.rechargement.dates.is_empty() {
             log::info!("config dates : {:?}", config2.rechargement.dates);
-            let mut nb_count_max = -1;
-            nb_count_max = 2;
+            let mut nb_count_max = 2;
             let mut liste_dates: Vec<DateTime<FixedOffset>> = Vec::new();
             for date_str in &config2.rechargement.dates {
                 let d = date_str.clone();
@@ -252,7 +214,7 @@ async fn main() -> Result<(), Error> {
     )
     .unwrap();
 
-    let mut config_param = init_config_param(fichier_param.clone());
+    let config_param = init_config_param(fichier_param.clone());
 
     match dates {
         ListeDates::DatesContinues(date, max_jours, nb_count_max) => {
@@ -353,6 +315,23 @@ fn init_config(handle: Handle) -> Result<Config, Error> {
     log::info!("Configuration chargée : {:?}", config);
 
     Ok(config)
+}
+
+fn parse_date(s:String) -> DateTime<FixedOffset> {
+    let test = s.parse::<u64>();
+    match test {
+        Ok(ok) => {
+            let datetime = DateTime::from_timestamp_millis(ok as i64 * 1000)
+                .unwrap()
+                .fixed_offset();
+            datetime
+        }
+        Err(_e) => {
+            let s2 = s + "T00:00:00+00:00";
+            let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
+            datetime
+        }
+    }
 }
 
 async fn traitement(
