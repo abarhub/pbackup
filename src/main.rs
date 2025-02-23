@@ -1,3 +1,5 @@
+mod minmax;
+
 use chrono::{DateTime, FixedOffset, Local, NaiveTime};
 use log::LevelFilter;
 use log4rs::append::console::ConsoleAppender;
@@ -13,6 +15,7 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 use std::{env, fmt, fs, thread};
+use crate::minmax::create_min_max;
 
 #[derive(Debug, Deserialize, Clone)]
 struct Config {
@@ -47,38 +50,6 @@ pub struct ConfigParamForce {
     pub date_opt: Option<DateTime<FixedOffset>>,
     pub nb_count_max: i32,
     pub force: bool,
-}
-
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct MinMax {
-    pub nb: i32,
-    pub min: i32,
-    pub max: i32,
-    pub last: i32,
-    pub ordre: bool,
-}
-
-impl MinMax {
-    fn add(&mut self, valeur: i32) {
-        if self.nb == 0 {
-            self.min = valeur;
-            self.max = valeur;
-        } else {
-            if self.min > valeur {
-                self.min = valeur;
-            }
-            if self.max < valeur {
-                self.max = valeur;
-            }
-        }
-        self.nb += 1;
-        if self.ordre {
-            if self.last > valeur {
-                self.ordre = false;
-            }
-        }
-        self.last = valeur;
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -120,12 +91,6 @@ impl fmt::Display for Parameters {
             "detail_type: {}, count: {}, offset: {}, total: {}, sort: {}, since: {:?}",
             self.detail_type, self.count, self.offset, self.total, self.sort, self.since
         )
-    }
-}
-
-impl fmt::Display for MinMax {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "({},{},{})", self.min, self.max, self.ordre)
     }
 }
 
@@ -806,14 +771,4 @@ fn save_as_json_list(list: &Value, fname: &str, param: &ConfigParam, fname_param
     file.write_all(list_as_json.as_bytes())
         .expect("Cannot write to the file!");
     log::info!("Fichier {} sauve", fname_param);
-}
-
-fn create_min_max() -> MinMax {
-    MinMax {
-        nb: 0,
-        min: 0,
-        max: 0,
-        last: 0,
-        ordre: true,
-    }
 }
