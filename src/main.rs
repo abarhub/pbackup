@@ -50,6 +50,38 @@ pub struct ConfigParamForce {
     pub force: bool,
 }
 
+#[derive(Default, Debug, Clone, PartialEq)]
+pub struct MinMax {
+    pub nb: i32,
+    pub min: i32,
+    pub max: i32,
+    pub last: i32,
+    pub ordre: bool,
+}
+
+impl MinMax {
+    fn add(&mut self, valeur: i32) {
+        if self.nb == 0 {
+            self.min = valeur;
+            self.max = valeur;
+        } else {
+            if self.min > valeur {
+                self.min = valeur;
+            }
+            if self.max < valeur {
+                self.max = valeur;
+            }
+        }
+        self.nb += 1;
+        if self.ordre {
+            if self.last > valeur {
+                self.ordre = false;
+            }
+        }
+        self.last = valeur;
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 struct Parameters {
     consumer_key: String,
@@ -81,6 +113,12 @@ impl fmt::Display for Parameters {
             "detail_type: {}, count: {}, offset: {}, total: {}, sort: {}, since: {:?}",
             self.detail_type, self.count, self.offset, self.total, self.sort, self.since
         )
+    }
+}
+
+impl fmt::Display for MinMax {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "({},{},{})", self.min, self.max, self.ordre)
     }
 }
 
@@ -323,8 +361,6 @@ fn init_config(handle: Handle) -> Result<Config, Error> {
 
 async fn traitement(
     config: Config,
-    //date_opt: Option<DateTime<FixedOffset>>,
-    //nb_count_max: i32,
     config_force: ConfigParamForce,
     fichier: String,
     fichier_param: String,
@@ -345,18 +381,12 @@ async fn traitement(
     let request_url2 = config.url.clone();
     log::info!("{}", request_url2);
 
-    //let fichier = config.repertoire.clone() + "/data.json";
-
-    // let config2 = config.clone();
-    // backup_data(config2, &fichier.clone()).unwrap();
-
     let mut count = 0u64;
     let mut offset = 0u64;
     let mut since = 0u64;
     let mut dernier_since = 0u64;
 
     let mut data: Value;
-    //let mut data_param: ConfigParam;
 
     let initialisation: bool;
 
@@ -382,10 +412,7 @@ async fn traitement(
             if !config_force.force {
                 if data_param.date_dernier_traiment > 0 {
                     since = data_param.date_dernier_traiment;
-                    // offset= data_param.offset as u64;
-                } /*else {
-                      since = data[DATA_DATE].as_u64().unwrap();
-                  }*/
+                }
                 log::info!("since file: {}", since);
             } else {
                 since = config_force.date_opt.unwrap().timestamp().unsigned_abs();
@@ -550,14 +577,8 @@ async fn traitement(
                 let mut nb_ajout = 0;
                 let mut nb_remplace = 0;
                 let mut s = "".to_string();
-                let mut min_added = 0;
-                let mut max_added = 0;
-                let mut last_added = 0;
-                let mut ordered_added = true;
-                let mut min_updated = 0;
-                let mut max_updated = 0;
-                let mut last_updated = 0;
-                let mut ordered_updated = true;
+                let mut ajout = create_min_max();
+                let mut remplace = create_min_max();
                 for tmp in obj2.iter() {
                     if !liste.as_object().unwrap().contains_key(tmp.0) {
                         nb_ajout += 1;
@@ -586,44 +607,10 @@ async fn traitement(
                         }
                     }
                     if time_added > 0 {
-                        if min_added == 0 {
-                            min_added = time_added;
-                        } else {
-                            min_added = min(min_added, time_added);
-                        }
-                        if max_added == 0 {
-                            max_added = time_added;
-                        } else {
-                            max_added = max(max_added, time_added);
-                        }
-                        if last_added > 0 {
-                            if ordered_added {
-                                if last_added > time_added {
-                                    ordered_added = false;
-                                }
-                            }
-                        }
-                        last_added = time_added;
+                        ajout.add(time_added);
                     }
                     if time_updated > 0 {
-                        if min_updated == 0 {
-                            min_updated = time_updated;
-                        } else {
-                            min_updated = min(min_updated, time_updated);
-                        }
-                        if max_updated == 0 {
-                            max_updated = time_updated;
-                        } else {
-                            max_updated = max(max_updated, time_updated);
-                        }
-                        if last_updated > 0 {
-                            if ordered_updated {
-                                if last_updated > time_updated {
-                                    ordered_updated = false;
-                                }
-                            }
-                        }
-                        last_updated = time_updated;
+                        remplace.add(time_updated);
                     }
                     let s0 = format!(
                         "({},{},{},{})",
@@ -639,18 +626,9 @@ async fn traitement(
                 }
                 log::info!("nb_ajout: {}, nb_remplace: {}", nb_ajout, nb_remplace);
                 log::debug!("elements: {}", s);
-                log::info!(
-                    "added: ({},{},{}), updated: ({},{},{})",
-                    min_added,
-                    max_added,
-                    ordered_added,
-                    min_updated,
-                    max_updated,
-                    ordered_updated
-                );
+                log::info!("added: {}, updated: {}", ajout, remplace);
                 total_ajout += nb_ajout;
                 total_modifie += nb_remplace;
-                //data[DATA_OFFSET] = Value::Number(Number::from(offset));
                 if data_param.etat == DATA_ETAT_SPECIFIQUE {
                     data_param.offset = offset as i64;
                 }
@@ -688,7 +666,7 @@ async fn traitement(
                         data_param.date_dernier_traiment = date.timestamp_millis() as u64;
                     } else {
                         //data_param.date_dernier_traiment = dernier_since;
-                        let timestamp =(Local::now().timestamp_millis() / 1000) as u64;
+                        let timestamp = (Local::now().timestamp_millis() / 1000) as u64;
                         check_timestamp(&timestamp);
                         data_param.date_dernier_traiment = timestamp;
                     }
@@ -853,4 +831,14 @@ fn save_as_json_list(list: &Value, fname: &str, param: &ConfigParam, fname_param
     file.write_all(list_as_json.as_bytes())
         .expect("Cannot write to the file!");
     log::info!("Fichier {} sauve", fname_param);
+}
+
+fn create_min_max() -> MinMax {
+    MinMax {
+        nb: 0,
+        min: 0,
+        max: 0,
+        last: 0,
+        ordre: true,
+    }
 }
