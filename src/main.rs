@@ -8,7 +8,6 @@ use reqwest::Error;
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::cmp::{max, min};
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
@@ -96,6 +95,14 @@ struct Parameters {
     since: Option<u64>,
 }
 
+#[derive(Debug)]
+enum ListeDates {
+    DatesContinues(DateTime<FixedOffset>, u32, i32),
+    ListeDates(Vec<DateTime<FixedOffset>>, i32),
+    DateJusquaFin(i32),
+    None,
+}
+
 const DATA_ETAT: &str = "etat";
 const DATA_OFFSET: &str = "offset";
 const DATA_DATE: &str = "date";
@@ -144,16 +151,15 @@ async fn main() -> Result<(), Error> {
     if arg0.len() >= 2 {
         log::info!("param2 : {}", arg0[1]);
     }
-    let mut date_opt: Option<DateTime<FixedOffset>> = None;
-    let mut nb_count_max = -1;
-    let mut max_jours = 10;
-    let mut liste_dates: Vec<DateTime<FixedOffset>> = Vec::new();
-    let mut suite_config_date = false;
+    let mut dates: ListeDates = ListeDates::None;
     if arg0.len() >= 3 {
         log::info!("param3 : {}", arg0[2]);
         let s = arg0[2].clone();
         //let s2: String;
         let test = s.parse::<u64>();
+        let date_opt: Option<DateTime<FixedOffset>>;
+        let nb_count_max = 2;
+        let mut max_jours = 10;
         match test {
             Ok(ok) => {
                 let datetime = DateTime::from_timestamp_millis(ok as i64 * 1000)
@@ -170,7 +176,7 @@ async fn main() -> Result<(), Error> {
         // let s2 = s + "T00:00:00+00:00";
         // let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
         // date_opt = Some(datetime);
-        nb_count_max = 2;
+        //nb_count_max = 2;
         if arg0.len() >= 4 {
             log::info!("param4 : {}", arg0[3]);
             let s = arg0[3].clone();
@@ -179,10 +185,14 @@ async fn main() -> Result<(), Error> {
                 max_jours = nb;
             }
         }
+        dates = ListeDates::DatesContinues(date_opt.unwrap(), max_jours as u32, nb_count_max);
     } else {
         let config2 = config.clone();
         if !config2.rechargement.date_debut.trim().is_empty() {
             let s = config2.rechargement.date_debut.trim().to_string();
+            let mut date_opt: Option<DateTime<FixedOffset>> = None;
+            let mut nb_count_max = -1;
+            let mut max_jours = 10;
             log::info!("config date : {}", s);
             // let s2 = s + "T00:00:00+00:00";
             // let datetime = DateTime::parse_from_rfc3339(s2.as_str()).unwrap();
@@ -208,9 +218,12 @@ async fn main() -> Result<(), Error> {
             if config2.rechargement.nb_parcourt > 0 {
                 nb_count_max = config2.rechargement.nb_parcourt;
             }
+            dates = ListeDates::DatesContinues(date_opt.unwrap(), max_jours as u32, nb_count_max);
         } else if !config2.rechargement.dates.is_empty() {
             log::info!("config dates : {:?}", config2.rechargement.dates);
+            let mut nb_count_max = -1;
             nb_count_max = 2;
+            let mut liste_dates: Vec<DateTime<FixedOffset>> = Vec::new();
             for date_str in &config2.rechargement.dates {
                 let d = date_str.clone();
                 let s2 = d + "T00:00:00+00:00";
@@ -220,18 +233,11 @@ async fn main() -> Result<(), Error> {
             if config2.rechargement.nb_parcourt > 0 {
                 nb_count_max = config2.rechargement.nb_parcourt;
             }
-        } else {
-            suite_config_date = true;
+            dates = ListeDates::ListeDates(liste_dates, nb_count_max);
         }
     }
 
-    log::info!(
-        "date : {:?}, nb_count_max : {}, max_jours : {}",
-        date_opt,
-        nb_count_max,
-        max_jours
-    );
-    log::info!("dates : {:?}", liste_dates);
+    log::info!("date : {:?}", dates);
 
     let fichier = config.repertoire.clone() + "/data.json";
     let fichier_param = config.repertoire.clone() + "/param.json";
@@ -248,72 +254,43 @@ async fn main() -> Result<(), Error> {
 
     let mut config_param = init_config_param(fichier_param.clone());
 
-    if suite_config_date && date_opt.is_none() {
-        if config_param.date_dernier_traiment > 0 {}
-    }
-
-    match date_opt {
-        Some(date) => {
+    match dates {
+        ListeDates::DatesContinues(date, max_jours, nb_count_max) => {
             log::info!("parcourt de dates consecutives");
             for i in 0..max_jours {
                 let date2 = date + chrono::Duration::days(i as i64);
                 log::info!("traitement de : {}", date2);
-                let config_force = ConfigParamForce {
-                    date_opt: Some(date2),
-                    nb_count_max,
-                    force: true,
-                };
-                config_param.etat = DATA_ETAT_SPECIFIQUE.to_string();
-                config_param.offset = 0;
-                config_param.date_dernier_traiment = date.timestamp() as u64;
-                traitement(
-                    config.clone(),
-                    config_force,
-                    fichier.clone(),
-                    fichier_param.clone(),
-                    config_param.clone(),
-                )
-                .await;
+                traitement_specifique(config.clone(),nb_count_max,
+                                      fichier.clone(), fichier_param.clone(),
+                                      config_param.clone(),&date2).await;
             }
         }
-        None => {
-            if liste_dates.len() > 0 {
-                log::info!("parcourt de dates");
-                for date in liste_dates.iter() {
-                    log::info!("traitement de : {}", date);
-                    config_param.etat = DATA_ETAT_SPECIFIQUE.to_string();
-                    config_param.offset = 0;
-                    config_param.date_dernier_traiment = date.timestamp() as u64;
-                    let config_force = ConfigParamForce {
-                        date_opt: Some(*date),
-                        nb_count_max,
-                        force: true,
-                    };
-                    traitement(
-                        config.clone(),
-                        config_force,
-                        fichier.clone(),
-                        fichier_param.clone(),
-                        config_param.clone(),
-                    )
-                    .await;
-                }
-            } else {
-                log::info!("mise à jours");
-                let config_force = ConfigParamForce {
-                    date_opt: None,
-                    nb_count_max,
-                    force: false,
-                };
-                traitement(
-                    config,
-                    config_force,
-                    fichier.clone(),
-                    fichier_param.clone(),
-                    config_param.clone(),
-                )
-                .await;
+        ListeDates::ListeDates(liste_dates, nb_count_max) => {
+            log::info!("parcourt de dates");
+            for date in liste_dates.iter() {
+                log::info!("traitement de : {}", date);
+                traitement_specifique(config.clone(),nb_count_max,fichier.clone(), 
+                                      fichier_param.clone(),config_param.clone(),date).await;
             }
+        }
+        ListeDates::DateJusquaFin(nb_count_max) => {
+            log::info!("mise à jours");
+            let config_force = ConfigParamForce {
+                date_opt: None,
+                nb_count_max,
+                force: false,
+            };
+            traitement(
+                config,
+                config_force,
+                fichier.clone(),
+                fichier_param.clone(),
+                config_param.clone(),
+            )
+            .await;
+        }
+        ListeDates::None => {
+            log::info!("aucun traitement à réaliser");
         }
     }
 
@@ -325,6 +302,25 @@ async fn main() -> Result<(), Error> {
 
     log::info!("duree totale : {}", diff);
     Ok(())
+}
+
+async fn traitement_specifique(config:Config, nb_count_max:i32, fichier: String, fichier_param:String, mut config_param:ConfigParam, date: &DateTime<FixedOffset>){
+    config_param.etat = DATA_ETAT_SPECIFIQUE.to_string();
+    config_param.offset = 0;
+    config_param.date_dernier_traiment = date.timestamp() as u64;
+    let config_force = ConfigParamForce {
+        date_opt: Some(*date),
+        nb_count_max: nb_count_max,
+        force: true,
+    };
+    traitement(
+        config.clone(),
+        config_force,
+        fichier.clone(),
+        fichier_param.clone(),
+        config_param.clone(),
+    )
+        .await;
 }
 
 fn init_logs() -> Handle {
