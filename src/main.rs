@@ -1,10 +1,11 @@
 mod minmax;
+mod config;
 
 use chrono::{DateTime, FixedOffset, Local, NaiveTime};
 use log::LevelFilter;
 use log4rs::append::console::ConsoleAppender;
 use log4rs::config::{Appender, Root};
-use log4rs::Handle;
+use log4rs::{Config, Handle};
 use reqwest;
 use reqwest::Error;
 use reqwest::StatusCode;
@@ -15,42 +16,8 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 use std::{env, fmt, fs, thread};
+use crate::config::{get_config, init_config_param, Config2, ConfigParam, ConfigParamForce, DATA_ETAT_INITIALISATION, DATA_ETAT_MISE_A_JOUR, DATA_ETAT_SPECIFIQUE};
 use crate::minmax::create_min_max;
-
-#[derive(Debug, Deserialize, Clone)]
-struct Config {
-    url: String,
-    consumer_key: String,
-    access_token: String,
-    repertoire: String,
-    temporisation: u64,
-    config_log: String,
-    sauvegarde: u64,
-    rechargement: ConfigRechargement,
-}
-
-#[derive(Debug, Deserialize, Clone)]
-struct ConfigRechargement {
-    date_debut: String,
-    dates: Vec<String>,
-    nb_jours: i32,
-    nb_parcourt: i32,
-}
-
-#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConfigParam {
-    pub date_dernier_traiment: u64,
-    pub offset: i64,
-    pub etat: String,
-}
-
-#[derive(Default, Debug, Clone, PartialEq)]
-pub struct ConfigParamForce {
-    pub date_opt: Option<DateTime<FixedOffset>>,
-    pub nb_count_max: i32,
-    pub force: bool,
-}
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Parameters {
@@ -79,10 +46,6 @@ const DATA_OFFSET: &str = "offset";
 const DATA_DATE: &str = "date";
 const DATA_LISTE: &str = "liste";
 
-const DATA_ETAT_INITIALISATION: &str = "initialisation";
-const DATA_ETAT_MISE_A_JOUR: &str = "miseAJour";
-const DATA_ETAT_SPECIFIQUE: &str = "specifique";
-
 impl fmt::Display for Parameters {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // Customize so only `x` and `y` are denoted.
@@ -103,7 +66,7 @@ async fn main() -> Result<(), Error> {
 
     log::info!("debut : {}", start.format("%Y-%m-%d %H:%M:%S"));
 
-    let config: Config = init_config(handle)?;
+    let config: Config2 = init_config(handle)?;
 
     let args: Vec<String> = env::args().collect();
     dbg!(&args);
@@ -231,7 +194,7 @@ async fn main() -> Result<(), Error> {
     Ok(())
 }
 
-async fn traitement_specifique(config:Config, nb_count_max:i32, fichier: String, fichier_param:String, mut config_param:ConfigParam, date: &DateTime<FixedOffset>){
+async fn traitement_specifique(config:Config2, nb_count_max:i32, fichier: String, fichier_param:String, mut config_param:ConfigParam, date: &DateTime<FixedOffset>){
     config_param.etat = DATA_ETAT_SPECIFIQUE.to_string();
     config_param.offset = 0;
     config_param.date_dernier_traiment = date.timestamp() as u64;
@@ -262,10 +225,10 @@ fn init_logs() -> Handle {
     handle
 }
 
-fn init_config(handle: Handle) -> Result<Config, Error> {
+fn init_config(handle: Handle) -> Result<Config2, Error> {
     let config_or_err = get_config(handle);
 
-    let config: Config;
+    let config: Config2;
     match config_or_err {
         Ok(valeur) => {
             log::info!("Résultat : {:?}", valeur);
@@ -300,7 +263,7 @@ fn parse_date(s:String) -> DateTime<FixedOffset> {
 }
 
 async fn traitement(
-    config: Config,
+    config: Config2,
     config_force: ConfigParamForce,
     fichier: String,
     fichier_param: String,
@@ -684,26 +647,8 @@ fn check_timestamp(since: &u64) {
     }
 }
 
-fn init_config_param(fichier_param: String) -> ConfigParam {
-    let data_param: ConfigParam;
-    //let fichier_param = fichier_param; //fichier.clone()+"/../param.json";
-    let is_present = Path::new(&fichier_param.clone()).exists();
-    if is_present {
-        let file = File::open(fichier_param.clone()).expect("file should open read only");
-        data_param = serde_json::from_reader(file).expect("file should be proper JSON");
-    } else {
-        let p = ConfigParam {
-            date_dernier_traiment: 0,
-            offset: 0,
-            etat: "".to_string(),
-        };
-        data_param = p;
-    }
-    data_param
-}
-
 fn backup_data(
-    config: Config,
+    config: Config2,
     fichier: &String,
     debut_nom_fichier: &String,
 ) -> std::io::Result<()> {
@@ -724,33 +669,6 @@ fn backup_data(
     Ok(())
 }
 
-fn get_config(handle: Handle) -> Result<Config, Box<dyn std::error::Error>> {
-    let args: Vec<String> = env::args().collect();
-    if args.len() < 2 {
-        eprintln!("Usage: {} <config_file>", args[0]);
-        std::process::exit(1);
-    }
-    let config_path = &args[1];
-
-    // Lire le contenu du fichier
-    let config_content = fs::read_to_string(config_path)?;
-
-    // Parser le fichier TOML
-    let config: Config = toml::from_str(&config_content)?;
-
-    // Afficher la config chargée
-    println!("Configuration chargée : {:?}", config);
-    log::info!("Configuration chargée : {:?}", config);
-
-    log::info!("Reconfiguration des logs ...");
-    let chemin_config_log = config.config_log.as_str();
-    let configuration_log =
-        log4rs::config::load_config_file(chemin_config_log, Default::default())?;
-    handle.set_config(configuration_log);
-    log::info!("Reconfiguration des logs ok");
-
-    Ok(config)
-}
 
 fn save_as_json_list(list: &Value, fname: &str, param: &ConfigParam, fname_param: &String) {
     log::info!("Sauvegarde de {} ...", fname);
